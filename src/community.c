@@ -18,6 +18,7 @@
 #include "peer.h"
 #include "topology.h"
 #include "search.h"
+#include "hierarchy.h"
 
 #include <libxml/tree.h>
 #include <libxml/parser.h>
@@ -35,6 +36,7 @@ struct _tier{
 	int size;
 	int startIn;
 	TSearch *searching;
+	TFluctuation *fluctuation;
 };
 
 typedef struct _tiers TTiers;
@@ -109,7 +111,6 @@ static void setupChurnPeerCommunity(int id, TPeer *peer, xmlDocPtr doc, TSymTabl
 	}
 
 	joinPickChurn = randST->caller(randST,xdynamic,entry);
-
 	joinChurn = randST->caller(randST,xjoinDynamic,joinPickChurn);
 
 	peer->setDynamicJoin(peer,joinChurn);
@@ -164,8 +165,8 @@ static void setupContentPeerCommunity(int id, TPeer *peer, xmlDocPtr doc, TSymTa
 
 	sprintf(xpath,"/community/tier[%d]/peer/content/datasource/access/parameter[@name=\"dynamic\"]",id+1);
 	xdynamic = xgetOneParameter(doc, xpath);
-
 	randSymTable->getPars(randSymTable,xdynamic,pars);
+
 	entry[0]='\0';
 	parameter = strtok_r(pars, PARAMETERS_SEPARATOR, &last);
 	while(parameter){
@@ -217,29 +218,46 @@ static void setupCachePeerCommunity(int id, TPeer *peer, xmlDocPtr doc, TSymTabl
 	char entry[1000]={[0]='\0'};
 	char *separator = ";";
 	char *last=NULL;
+	xmlChar *xValue;
+	int levels,i;
 
-	sprintf(xpath,"/community/tier[%d]/peer/cache/parameter[@name=\"size\"]",id+1);
-	xsize = xgetOneParameter(doc, xpath);
-	//
-	sprintf(xpath,"/community/tier[%d]/peer/cache/policy/parameter[@name=\"dynamic\"]",id+1);
-	xdynamic = xgetOneParameter(doc, xpath);
-	xlog->getPars(xlog,xdynamic,pars);
 
-	entry[0]='\0';
-	parameter = strtok_r(pars, separator, &last);
-	while(parameter){
-		sprintf(xpath,"/community/tier[%d]/peer/cache/policy/parameter[@name=\"%s\"]",id+1,parameter);
-		value = xgetOneParameter(doc,xpath);
-		sprintf(entry+strlen(entry),"%s;",value); free(value);
-		parameter = strtok_r(NULL, separator, &last);
-	}
+	sprintf(xpath,"/community/tier[%d]/peer/caches",id+1);
+	xValue = xgetPropertyCommunity(doc, (xmlChar *)xpath,(xmlChar*)"levels");
+	levels = atoi((char*)xValue);xmlFree(xValue);
 
-	void *policy = xlog->caller(xlog,xdynamic,entry);//
-	TCache *cache = createCache(atoi(xsize),policy);
-	peer->setCache(peer,cache);
+	THCache *hc = createHCache(levels);//cria a hierarquia de caches
 
-	free(xdynamic); // free the dynamic memory allocated by xgetOnParameter
 
+	for(i=0;i<levels;i++){
+
+		sprintf(xpath,"/community/tier[%d]/peer/caches/cache[%d]/parameter[@name=\"size\"]",id+1,i+1);
+		xsize = xgetOneParameter(doc, xpath);
+		//
+		sprintf(xpath,"/community/tier[%d]/peer/caches/cache[%d]/policy/parameter[@name=\"dynamic\"]",id+1,i+1);
+		xdynamic = xgetOneParameter(doc, xpath);
+
+		xlog->getPars(xlog,xdynamic,pars);
+
+		entry[0]='\0';
+		parameter = strtok_r(pars, separator, &last);
+		while(parameter){
+			sprintf(xpath,"/community/tier[%d]/peer/caches/cache[%d]/policy/parameter[@name=\"%s\"]",id+1,i+1,parameter);
+			value = xgetOneParameter(doc,xpath);
+			sprintf(entry+strlen(entry),"%s;",value); free(value);
+			parameter = strtok_r(NULL, separator, &last);
+		}
+
+		void *policy = xlog->caller(xlog,xdynamic,entry);//
+
+		TCache *cache= createCache(atoi(xsize),policy);
+		hc->putCache(hc,i,cache);
+
+		free(xdynamic); // free the dynamic memory allocated by xgetOnParameter
+
+	}//end for
+
+	peer->setHCache(peer,hc);//Set HCache for peer
 }
 
 static void setupTopologyManagerPeerCommunity(int id, TPeer *peer, xmlDocPtr doc, TSymTable *topologyST){
@@ -340,33 +358,148 @@ static void* setupSearchingCommunity(int id, xmlDocPtr doc, TSymTable *searching
 
 	return searching;
 }
+// ############### Setup Fluctuation
+static void* setupFluctuationCommunity(int id, xmlDocPtr doc, TSymTable *fluctuationST){
+	char xpath[1000]={[0]='\0'};
+	char *xdynamic=NULL;
+	char pars[1000]={[0]='\0'}, *parameter=NULL, *value=NULL;
+	char entry[1000]={[0]='\0'};
+	char *separator = ";";
+	char *last=NULL;
+
+	sprintf(xpath,"/community/tier[%d]/fluctuation/policy/parameter[@name=\"dynamic\"]",id+1);
+	xdynamic = xgetOneParameter(doc, xpath);
+	fluctuationST->getPars(fluctuationST,xdynamic,pars);
+
+	entry[0]='\0';
+	parameter = strtok_r(pars, separator, &last);
+	while(parameter){
+		sprintf(xpath,"/community/tier[%d]/fluctuation/policy/parameter[@name=\"%s\"]",id+1,parameter);
+		value = xgetOneParameter(doc,xpath);
+		sprintf(entry+strlen(entry),"%s;",value); free(value);
+		parameter = strtok_r(NULL, separator, &last);
+	}
+
+	void *policy = fluctuationST->caller(fluctuationST,xdynamic,entry);//
+
+	TFluctuation *fluctuation = createDataFluctuation(policy);
+
+	free(xdynamic); // free the dynamic memory allocated by xgetOnParameter
+
+	return fluctuation;
+}
+// ############### End Setup Fluctuation
+
 
 //Setup Canal
-static void setupChannelPeerCommunity(int id, TPeer *peer, xmlDocPtr doc){
+static void setupChannelPeerCommunity(int id, TPeer *peer, xmlDocPtr doc, TSymTable *channelST){
 	char xpath[1000]={[0]='\0'};
-	char *xCapacity=NULL, *xRateUplink=NULL, *xPrefetchDownlinkRatePercent=NULL;
+	char *xCapacity=NULL, *xRateUplink=NULL,*xRateDownlink=NULL;
 	char pars[1000]={[0]='\0'}, *parameter=NULL, *value=NULL;
 	char entry[1000]={[0]='\0'};
 	char *separator = ";";
 	char *last=NULL;
 	float capacity;
-	float rateUplink;
+	float rateUplink, rateDownlink;
 	TChannel *channel;
 
+	char *xdynamic=NULL;
+
+	//void *uplinkTPChannel;
+	//void *downlinkTPChannel;
+	//
 	sprintf(xpath,"/community/tier[%d]/peer/channel/parameter[@name=\"capacity\"]",id+1);
 	xCapacity = xgetOneParameter(doc, xpath);
 	capacity = atof((char*)xCapacity);
 	free(xCapacity);
-	//
-	sprintf(xpath,"/community/tier[%d]/peer/channel/parameter[@name=\"rateUplink\"]",id+1);
+
+	// modificacao do Channel
+	sprintf(xpath,"/community/tier[%d]/peer/channel/uplink/parameter[@name=\"rateUplink\"]",id+1);
+	//xuplinkDynamic = xgetOneParameter(doc, xpath);
 	xRateUplink = xgetOneParameter(doc, xpath);
 	rateUplink = atof((char*)xRateUplink);
 	free(xRateUplink);
 
-	channel = createDataChannel(capacity, rateUplink);
+	sprintf(xpath,"/community/tier[%d]/peer/channel/uplink/throughput/parameter[@name=\"dynamic\"]",id+1);
+	xdynamic = xgetOneParameter(doc, xpath);
+	channelST->getPars(channelST,xdynamic,pars);
+
+	entry[0]='\0';
+	parameter = strtok_r(pars, PARAMETERS_SEPARATOR, &last);
+	while(parameter){
+		sprintf(xpath,"/community/tier[%d]/peer/channel/uplink/throughput/parameter[@name=\"%s\"]",id+1,parameter);
+		value = xgetOneParameter(doc,xpath);
+		sprintf(entry+strlen(entry),"%s;",value); free(value);
+		parameter = strtok_r(NULL, PARAMETERS_SEPARATOR, &last);
+
+	}
+
+	void *policy = channelST->caller(channelST,xdynamic,entry);//
+	TLink *upLink = createDataLink(rateUplink, policy);
+
+	free(xdynamic); // free the dynamic memory allocated by xgetOnParameter
+
+	sprintf(xpath,"/community/tier[%d]/peer/channel/downlink/parameter[@name=\"rateDownlink\"]",id+1);
+	xRateDownlink = xgetOneParameter(doc, xpath);
+	rateDownlink = atof((char*)xRateDownlink);
+	free(xRateDownlink);
+
+	// set up the joining dynamic of peers
+	sprintf(xpath,"/community/tier[%d]/peer/channel/downlink/throughput/parameter[@name=\"dynamic\"]",id+1);
+	xdynamic = xgetOneParameter(doc, xpath);
+	channelST->getPars(channelST,xdynamic,pars);
+
+	entry[0]='\0';
+	parameter = strtok_r(pars, PARAMETERS_SEPARATOR, &last);
+	while(parameter){
+		sprintf(xpath,"/community/tier[%d]/peer/channel/downlink/throughput/parameter[@name=\"%s\"]",id+1,parameter);
+		value = xgetOneParameter(doc,xpath);
+		sprintf(entry+strlen(entry),"%s;",value); free(value);
+		parameter = strtok_r(NULL, PARAMETERS_SEPARATOR, &last);
+	}
+
+	policy = channelST->caller(channelST,xdynamic,entry);
+
+	TLink *downLink= createDataLink(rateDownlink, policy);
+
+	free(xdynamic); // free the dynamic memory allocated by xgetOnParameter
+
+	channel = createDataChannel(capacity, upLink,downLink);
 	peer->setChannel(peer,channel);
 }
 
+
+/*
+//Setup Fluctutation Channel
+static void setupFluctuationChannelPeerCommunity(int id, TPeer *peer, xmlDocPtr doc, TSymTable *fluctuationST){
+	char xpath[1000]={[0]='\0'};
+	char *xdynamic=NULL;
+	char pars[1000]={[0]='\0'}, *parameter=NULL, *value=NULL;
+	char entry[1000]={[0]='\0'};
+	char *separator = ";";
+	char *last=NULL;
+
+	sprintf(xpath,"/community/tier[%d]/fluctuation/policy/parameter[@name=\"dynamic\"]",id+1);
+	xdynamic = xgetOneParameter(doc, xpath);
+	fluctuationST->getPars(fluctuationST,xdynamic,pars);
+
+	entry[0]='\0';
+	parameter = strtok_r(pars, separator, &last);
+	while(parameter){
+		sprintf(xpath,"/community/tier[%d]/fluctuation/policy/parameter[@name=\"%s\"]",id+1,parameter);
+		value = xgetOneParameter(doc,xpath);
+		sprintf(entry+strlen(entry),"%s;",value); free(value);
+		parameter = strtok_r(NULL, separator, &last);
+	}
+
+	void *fluctuation = fluctuationST->caller(fluctuationST,xdynamic,entry);//
+
+	free(xdynamic); // free the dynamic memory allocated by xgetOnParameter
+	peer->setFluctuation(peer,fluctuation);
+
+}
+//End Fluctuation
+*/
 
 static xmlDocPtr readConfigForCommunity(const char *fname){
 	const xmlChar *pattern = (const xmlChar *)"community";
@@ -389,15 +522,16 @@ static xmlDocPtr readConfigForCommunity(const char *fname){
 
 static short hasIntoCommunity(TCommunity* community, void *vObject, void *vHashTable,  unsigned int *idPeer){
 	short found = 0;
-	int stored, length, storedCandidate;
+	float storedCandidate;
+	float length,stored;
 	TObject *object = vObject;
 	THashTable *hashTable = vHashTable;
 	TKeyHashTable idObject;
 	TKeeperHashTable *keepers;
-	TCache *cache;
+	THCache *hc;  //@
 	TObject *storedObject;
 	unsigned int id = -1;
-	TListObject *listObject;
+	//TListObject *listObject;
 	TDataCommunity *data = community->data;
 
 	getIdObject(object, idObject);
@@ -410,9 +544,10 @@ static short hasIntoCommunity(TCommunity* community, void *vObject, void *vHashT
 		if ( !peer->isDown(peer) ){
 			// lookup the Object into the peer's Cache
 
-			cache = peer->getCache(peer);
-			listObject = cache->getObjects(cache);
-			storedObject = listObject->getObject(listObject, object);
+			hc = peer->getHCache(peer);
+			storedObject = hc->search(hc,object);
+			//listObject = hcache->getObjects(hcache);
+			//storedObject = listObject->getObject(listObject, object);//@não esta listando todos os objetos, apenas niveis
 
 			if (storedObject == NULL){
 				printf("PANIC: stored Object on hasCommunity!!");
@@ -480,8 +615,8 @@ static int howManyReplicateIntoCommunity(TCommunity* community, void *vObject, v
 
 
 static void printStatCommunity(TCommunity* community){
-	int i;
-	TCache *cache;
+	int i,j,levels;
+	THCache *hc;
 	TStatsCache *statsCache;
 	TStatsPeer *statsPeer;
 	TDataCommunity *data = community->data;
@@ -494,52 +629,64 @@ static void printStatCommunity(TCommunity* community){
 
 	for(i=0;i<data->size;i++){
 		TPeer *peer = data->peers[i];
-		cache = peer->getCache(peer);
+		hc = peer->getHCache(peer);
+		levels=hc->getLevels(hc);
+		//pegar as estatiticas de todos os niveis
+		j=0;
+		while(j<levels){
 
-		statsCache = cache->getStats(cache);
+
+			statsCache = hc->getStats(hc,j);// @
+
+
+
+			totalHit += statsCache->getHit( statsCache );
+			totalHit += statsCache->getCommunityHit( statsCache );
+
+			totalMiss += statsCache->getMiss( statsCache );
+
+			totalByteHit += statsCache->getByteHit( statsCache );
+			totalByteHit += statsCache->getByteCommunityHit( statsCache );
+
+			totalByteMiss += statsCache->getByteMiss( statsCache );
+
+
+
+			printf("===>Id peer: %d<===\n", i);
+			printf("===>Level Cache: %d<===\n", j);
+			hc->showStats(hc,j);
+			j++;
+		}//laço dos niveis da hierarquia de cache de um par
 
 		statsPeer = peer->getOnStats(peer);
-
-		totalHit += statsCache->getHit( statsCache );
-		totalHit += statsCache->getCommunityHit( statsCache );
-
-		totalMiss += statsCache->getMiss( statsCache );
-
-		totalByteHit += statsCache->getByteHit( statsCache );
-		totalByteHit += statsCache->getByteCommunityHit( statsCache );
-
-		totalByteMiss += statsCache->getByteMiss( statsCache );
-
-
 		totalRequest += getRequestStatsPeer(statsPeer);
 		totalUpTime += getUpTimeStatsPeer(statsPeer);
 		totalDownTime += getDownTimeStatsPeer(statsPeer);
-		printf("===>Id peer: %d<===\n", i);
-		cache->showStats(cache);
+
+			printf("Total hits: %ld \n", totalHit);
+			printf("Total misses: %ld\n", totalMiss);
+			printf("Total Byte hits: %ld\n", totalByteHit);
+			printf("Total Byte misses: %ld\n", totalByteMiss);
+
+			printf("Hit rate: %f \n", (float)totalHit/(float)(totalHit+totalMiss));
+			printf("Miss rate: %f\n", (float)totalMiss/(float)(totalHit+totalMiss));
+			printf("Byte hit rate: %f\n", (float)totalByteHit/(float)(totalByteHit+totalByteMiss));
+			printf("Byte miss rate: %f\n", (float)totalByteMiss/(float)(totalByteHit+totalByteMiss));
+
+			printf("Requests: %d \n", totalRequest);
+			printf("UpTime  : %d \n", totalUpTime);
+			printf("DownTime: %d \n", totalDownTime);
+
+
+			printf("%f %f ", (float)totalHit/(float)(totalHit+totalMiss), (float)totalMiss/(float)(totalHit+totalMiss));
+
+
 	}
-	printf("Total hits: %ld \n", totalHit);
-	printf("Total misses: %ld\n", totalMiss);
-	printf("Total Byte hits: %ld\n", totalByteHit);
-	printf("Total Byte misses: %ld\n", totalByteMiss);
-
-	printf("Hit rate: %f \n", (float)totalHit/(float)(totalHit+totalMiss));
-	printf("Miss rate: %f\n", (float)totalMiss/(float)(totalHit+totalMiss));
-	printf("Byte hit rate: %f\n", (float)totalByteHit/(float)(totalByteHit+totalByteMiss));
-	printf("Byte miss rate: %f\n", (float)totalByteMiss/(float)(totalByteHit+totalByteMiss));
-
-	printf("Requests: %d \n", totalRequest);
-	printf("UpTime  : %d \n", totalUpTime);
-	printf("DownTime: %d \n", totalDownTime);
-
-
-	printf("%f %f ", (float)totalHit/(float)(totalHit+totalMiss), (float)totalMiss/(float)(totalHit+totalMiss));
-
-
 }
 
 static void collectStatCommunity(TCommunity* community, float *hitRate, float *missRate, float *byteHitRate, float *byteMissRate, unsigned long int *totalRequests, int *peersUp, float *hitRateCom){
-	int i;
-	TCache *cache;
+	int i,levels;
+	THCache *hc;
 	TStatsCache *statsCache;
 	TStatsPeer *statsPeer;
 	TDataCommunity *data = community->data;
@@ -556,32 +703,41 @@ static void collectStatCommunity(TCommunity* community, float *hitRate, float *m
 	for(i=0;i<data->size;i++){
 		TPeer *peer = data->peers[i];
 		if (peer->isUp(peer)){
+
 			*peersUp += 1;
 		}
-		cache = peer->getCache(peer);
+		hc = peer->getHCache(peer); //@ recuperar hierarquia de memoria do par
+		levels=hc->getLevels(hc);
 
-		statsCache = cache->getStats(cache);
+		int j=0;
+		while(j<levels){
 
+			statsCache = hc->getStats(hc,j); //@ Coletar estatisticas da hierarquia
+
+
+
+			totalHit += statsCache->getHit( statsCache );
+			totalHit += statsCache->getCommunityHit( statsCache );
+			totalHitCom += statsCache->getCommunityHit( statsCache );
+
+			totalMiss += statsCache->getMiss( statsCache );
+
+			totalByteHit += statsCache->getByteHit( statsCache );
+			totalByteHit += statsCache->getByteCommunityHit( statsCache );
+
+			totalByteMiss += statsCache->getByteMiss( statsCache );
+
+
+
+
+			//printf("===>Id peer: %d<===\n", i);
+			//printOnStatsCache(cache);
+			j++;
+		}
 		statsPeer = peer->getOnStats(peer);
-
-		totalHit += statsCache->getHit( statsCache );
-		totalHit += statsCache->getCommunityHit( statsCache );
-		totalHitCom += statsCache->getCommunityHit( statsCache );
-
-		totalMiss += statsCache->getMiss( statsCache );
-
-		totalByteHit += statsCache->getByteHit( statsCache );
-		totalByteHit += statsCache->getByteCommunityHit( statsCache );
-
-		totalByteMiss += statsCache->getByteMiss( statsCache );
-
-
 		*totalRequests += getRequestStatsPeer(statsPeer);
 		totalUpTime += getUpTimeStatsPeer(statsPeer);
 		totalDownTime += getDownTimeStatsPeer(statsPeer);
-
-		//printf("===>Id peer: %d<===\n", i);
-		//printOnStatsCache(cache);
 	}
 
 	*hitRate = (float)totalHit/(float)(totalHit+totalMiss);
@@ -595,8 +751,8 @@ static void collectStatCommunity(TCommunity* community, float *hitRate, float *m
 
 
 static void collectStatTiersCommunity(TCommunity* community, unsigned long int timestamp){
-	int i,k;
-	TCache *cache;
+	int i,k,levels;
+	THCache *hc;
 	TStatsCache *statsCache;
 	TStatsPeer *statsPeer;
 	TDataCommunity *data = community->data;
@@ -630,30 +786,36 @@ static void collectStatTiersCommunity(TCommunity* community, unsigned long int t
 			if (peer->isUp(peer)){
 				peersUp += 1;
 			}
-			cache = peer->getCache(peer);
+			hc = peer->getHCache(peer);//@ Hierarquia de memoria do par
+			levels=hc->getLevels(hc);
+			int j=0;
+			while(j<levels){
+				statsCache = hc->getStats(hc,j);//@ estatisticas da comunidade
 
-			statsCache = cache->getStats(cache);
 
+
+				totalHit += statsCache->getHit( statsCache );
+				totalHit += statsCache->getCommunityHit( statsCache );
+				totalHitCom += statsCache->getCommunityHit( statsCache );
+
+				totalMiss += statsCache->getMiss( statsCache );
+
+				totalByteHit += statsCache->getByteHit( statsCache );
+				totalByteHit += statsCache->getByteCommunityHit( statsCache );
+
+				totalByteMiss += statsCache->getByteMiss( statsCache );
+
+
+
+				//printf("===>Id peer: %d<===\n", i);
+				//printOnStatsCache(cache);
+				j++;
+			}
 			statsPeer = peer->getOnStats(peer);
-
-			totalHit += statsCache->getHit( statsCache );
-			totalHit += statsCache->getCommunityHit( statsCache );
-			totalHitCom += statsCache->getCommunityHit( statsCache );
-
-			totalMiss += statsCache->getMiss( statsCache );
-
-			totalByteHit += statsCache->getByteHit( statsCache );
-			totalByteHit += statsCache->getByteCommunityHit( statsCache );
-
-			totalByteMiss += statsCache->getByteMiss( statsCache );
-
-
 			totalRequests += getRequestStatsPeer(statsPeer);
 			totalUpTime += getUpTimeStatsPeer(statsPeer);
 			totalDownTime += getDownTimeStatsPeer(statsPeer);
 
-			//printf("===>Id peer: %d<===\n", i);
-			//printOnStatsCache(cache);
 		}
 
 		hitRate = (float)totalHit/(float)(totalHit+totalMiss);
@@ -679,7 +841,8 @@ static void collectStatTiersCommunity(TCommunity* community, unsigned long int t
 
 
 static void resetStatCommunity(TCommunity* community){
-	int i;
+	int i, levels;
+	THCache *hc;
 	TCache *cache;
 	TStatsCache *statsCache;
 	TStatsPeer *statsPeer;
@@ -687,28 +850,35 @@ static void resetStatCommunity(TCommunity* community){
 
 	for(i=0;i<data->size;i++){
 		TPeer *peer = data->peers[i];
-		cache = peer->getCache(peer);
+		hc = peer->getHCache(peer);
 
-		statsCache = cache->getStats(cache);
+		levels=hc->getLevels(hc);
 
+		int j=0;
+		while(j<levels){
+			cache=hc->getCache(hc,j);
+			statsCache = cache->getStats(cache);
+
+			statsCache->setHit( statsCache, 0 );
+			statsCache->setCommunityHit( statsCache, 0 );
+
+			statsCache->setMiss( statsCache, 0 );
+
+			statsCache->setByteHit( statsCache, 0 );
+			statsCache->setByteCommunityHit( statsCache, 0 );
+
+			statsCache->setByteMiss( statsCache, 0 );
+
+
+
+			//printf("===>Id peer: %d<===\n", i);
+			//printOnStatsCache(cache);
+			j++;
+		}
 		statsPeer = peer->getOnStats(peer);
-
-		statsCache->setHit( statsCache, 0 );
-		statsCache->setCommunityHit( statsCache, 0 );
-
-		statsCache->setMiss( statsCache, 0 );
-
-		statsCache->setByteHit( statsCache, 0 );
-		statsCache->setByteCommunityHit( statsCache, 0 );
-
-		statsCache->setByteMiss( statsCache, 0 );
-
-
 		setRequestStatPeer(statsPeer, 0);
 		setUpTimeStatsPeer(statsPeer, 0);
 		setDownTimeStatsPeer(statsPeer, 0);
-		//printf("===>Id peer: %d<===\n", i);
-		//printOnStatsCache(cache);
 
 	}
 
@@ -716,7 +886,8 @@ static void resetStatCommunity(TCommunity* community){
 
 
 static unsigned long int onCacheCommunity(TCommunity* community){
-	int i;
+	int i, lPrincipal;//@ Levels
+	THCache *hc;
 	TCache *cache;
 	TDataCommunity *data = community->data;
 
@@ -725,8 +896,12 @@ static unsigned long int onCacheCommunity(TCommunity* community){
 	for(i=0;i<data->size;i++){
 		TPeer *peer = data->peers[i];
 		if (peer->isUp(peer)){
-			cache = peer->getCache(peer);
-			totalCached += cache->getOccupancy(cache);
+			hc = peer->getHCache(peer);
+			lPrincipal=hc->getLevelPrincipal(hc);
+			cache=hc->getCache(hc,lPrincipal);
+
+			//pegar cache principal
+			totalCached += cache->getOccupancy(cache);//@ pegar a ocupacao da cache principal
 
 		}
 	}
@@ -798,6 +973,33 @@ static void* searchingCommunity(TCommunity *community, void *vpeer, void *object
 
 }
 
+//fluctuationCommunity
+static void fluctuationCommunity(TCommunity *community){
+	TDataCommunity *data = community->data;
+	TPeer *peer;
+
+/*	TFluctuation *fluctuation = data->tiers->tier[0].fluctuation;
+
+	fluctuation->updateFluctuation (fluctuation);*/
+
+	int sizeComm = community->getSize(community);
+	unsigned int i;
+
+	for(i=0;i<sizeComm;i++){
+
+		peer = community->getPeer(community, i);
+		if (peer->isUp(peer)){
+			peer->updateTimeForFluctuation(peer);
+		}
+	}
+}
+
+
+
+
+
+//
+
 static void disposeCommunity(TCommunity* community){
 	int i;
 	TDataCommunity *data = community->data;
@@ -848,9 +1050,10 @@ TCommunity* createCommunity(int simTime, char *scenarios){
 		dataComm->tiers->tier[i].startIn = k;
 
 		dataComm->tiers->tier[i].searching = setupSearchingCommunity(i, doc, symTable);
+		dataComm->tiers->tier[i].fluctuation = setupFluctuationCommunity(i, doc, symTable);
 
 		for(j=0;j<xSize;j++){
-			//Canal
+
 			p = createPeer((unsigned int)k, i+1, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL );
 
 			// setup
@@ -860,7 +1063,8 @@ TCommunity* createCommunity(int simTime, char *scenarios){
 			setupTopologyManagerPeerCommunity(i, p, doc, symTable);
 			setupProfilePeerCommunity(i, p, doc, symTable);
 			//Canal
-			setupChannelPeerCommunity(i, p, doc);
+			setupChannelPeerCommunity(i, p, doc, symTable);
+			//setupFluctuationChannelPeerCommunity(i, p, doc, symTable);
 
 			dataComm->peers[k] = p;
 			k++;
@@ -887,6 +1091,7 @@ TCommunity* createCommunity(int simTime, char *scenarios){
 	community->getAlivePeer= getAlivePeerCommunity;
 	community->getNumberOfAlivePeer = getNumberOfAlivePeerCommunity;
 	community->searching = searchingCommunity;
+	community->fluctuation = fluctuationCommunity;
 
 	community->dispose = disposeCommunity;
 
@@ -894,6 +1099,9 @@ TCommunity* createCommunity(int simTime, char *scenarios){
 
 	return community;
 }
+
+
+
 
 
 

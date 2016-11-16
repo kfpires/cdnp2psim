@@ -17,14 +17,42 @@
 #include "community.h"
 #include "search.h"
 #include "channel.h"
+#include "hierarchy.h"
 
-#define LENGTH_VIDEO_CATALOG 413524
+//#define LENGTH_VIDEO_CATALOG 413524
+#define LENGTH_VIDEO_CATALOG 6134
 
+
+
+#define SECONDS_TO_MILLISECONDS 1000
 #define MINUTES_TO_SECONDS	60
 #define HOURS_TO_SECONDS	60*MINUTES_TO_SECONDS
 #define DAYS_TO_SECONDS		24*HOURS_TO_SECONDS
 #define WEEKS_TO_SECONDS	7*DAYS_TO_SECONDS
 #define YEARS_TO_SECONDS	365*DAYS_TO_SECONDS
+
+//
+
+
+//
+/*typedef struct _tier TTier;
+struct _tier{
+	int size;
+	int startIn;
+	TSearch *searching;
+};
+typedef struct _tiers TTiers;
+struct _tiers{
+	int numberOf;
+	TTier* tier;
+};
+struct _data_community{
+	TPeer** peers; //TPeer
+	TArrayDynamic *alive;
+	unsigned int *alivePeers;
+	int size;
+	TTiers *tiers;
+};*/
 
 //extreme replication control policy
 //
@@ -33,20 +61,24 @@ void poisonCacheReplicationPolicy(unsigned int idPeer, THashTable* hashTable, TC
 	TObject *object, *walker;
 	TItemHashTable *item;
 	TIdObject idVideo;
-	TCache *cache;
+	THCache *hc;
 	TReplicate *replica;
 	int maxReplicas;
+	int lPrincipal;
+
 	//TDataCommunity *data = community->data;
 
 	TPeer *peer = community->getPeer(community, idPeer);
 
 	// lookup the Object into the peer's Cache
-	cache = peer->getCache(peer);
+	hc = peer->getHCache(peer);
+	lPrincipal=hc->getLevelPrincipal(hc);
 
 	// init a item that goes on Hash Table
 	item = createItemHashTable();
 
-	listObject = cache->getObjects(cache);
+
+	listObject = hc->getObjects(hc,lPrincipal);
 
 	replica = (TReplicate *)peer->getReplicate(peer);
 	maxReplicas = getMaxReplicasReplicateRandomic(replica);
@@ -58,7 +90,7 @@ void poisonCacheReplicationPolicy(unsigned int idPeer, THashTable* hashTable, TC
 		if ( community->howManyReplicate(community, object, hashTable) >= maxReplicas ){
 			getIdObject(object, idVideo);
 
-			cache->addAvailability(cache, getStoredObject(object) );
+			hc->addAvailability(hc, getStoredObject(object) );
 
 			item->set(item, idPeer, NULL, idVideo, object);
 			hashTable->removeItem(hashTable, item);
@@ -95,7 +127,7 @@ void initSimulator(int simTime, TCommunity** pCommunity, TPriorityQueue** pQueue
 	TEvent *event;
 	TCommunity *community;
 	TPriorityQueue *queue;
-	int eventTime;
+	float eventTime;
 
 	*pCommunity = createCommunity(simTime, scenarios);
 	community = *pCommunity;
@@ -112,14 +144,12 @@ void initSimulator(int simTime, TCommunity** pCommunity, TPriorityQueue** pQueue
 
 		event = createEvent( peer->getDownSessionDuration(peer), JOIN, (TOwnerEvent) i);
 		eventTime = event->getTime(event);
-
 		queue->enqueue(queue, eventTime, event);
 
 		//Queuing A Topology manager event
 		eventTime += 10;
 		event  = createEvent((TTimeEvent) eventTime, TOPOLOGY, (TOwnerEvent)i);
 		queue->enqueue(queue, eventTime, event);
-
 	}
 
 //	event = createEvent( 1, SHOW_TOPOLOGY, 0);
@@ -130,6 +160,9 @@ void initSimulator(int simTime, TCommunity** pCommunity, TPriorityQueue** pQueue
 
 //	event = createEvent( 1, SHOW_CHANNELS, 0);
 //	queue->enqueue(queue, event->getTime(event), event);
+	eventTime += 7*24*60*60;
+	event  = createEvent((TTimeEvent) eventTime, REPLICATE, 0);
+	queue->enqueue(queue, eventTime, event);
 
 	*hashTable = createHashTable((int)LENGTH_VIDEO_CATALOG*LOAD_FACTOR_HASH_TABLE + 7);
 
@@ -198,6 +231,9 @@ void prefetch(TPeer* peer, unsigned int idPeer, THashTable* hashTable, TCommunit
 	TChannel* channel;
 	float prefetchRate;
 
+	THCache *hc=peer->getHCache(peer); //@
+	int lPrincipal=hc->getLevelPrincipal(hc); //@
+
 	channel = peer->getChannel(peer);
 
 	dataSource = peer->getDataSource(peer);
@@ -216,7 +252,7 @@ void prefetch(TPeer* peer, unsigned int idPeer, THashTable* hashTable, TCommunit
 		serverPeer->openULVideoChannel(serverPeer, idPeer, video, prefetchRate);
 		peer->openDLVideoChannel(peer, idServerPeer, video, prefetchRate);
 
-		if ( peer->insertCache( peer, cloneObject(video), systemData ) ){
+		if ( peer->insertCache( peer, cloneObject(video), systemData, lPrincipal ) ){
 
 			item = createItemHashTable();
 			item->set(item, idPeer, peer, idVideo, video);
@@ -231,19 +267,23 @@ void prefetch(TPeer* peer, unsigned int idPeer, THashTable* hashTable, TCommunit
 }
 
 // Process Request from peers
-int processRequestSimulator(unsigned int idPeer, THashTable* hashTable, TCommunity* community, TSystemInfo* systemData){
+float processRequestSimulator(unsigned int idPeer, THashTable* hashTable, TCommunity* community, TSystemInfo* systemData){
 
-	TObject *video;
+	TObject *video, *cloneVideo;
 	TListObject *listEvicted;
 	TPeer *serverPeer;
 	TDataSource *dataSource;
 	TItemHashTable *item;
 	unsigned int idServerPeer;
 	TIdObject idVideo;
-	int videoLength;
+	float videoLength;
 	float zero = 0.f;
 
+
 	TPeer *peer = community->getPeer(community, idPeer);
+
+	THCache *hc=peer->getHCache(peer); //@
+	int lPrincipal=hc->getLevelPrincipal(hc); //@
 
 	dataSource = peer->getDataSource(peer);
 	video = dataSource->pick(dataSource);
@@ -264,7 +304,7 @@ int processRequestSimulator(unsigned int idPeer, THashTable* hashTable, TCommuni
 		listEvicted = peer->getEvictedCache(peer);
 		hashTable->removeEvictedItens(hashTable, idPeer, listEvicted);
 		getIdObject(video, idVideo);
-			//printf("Comecar a assistir da cache: %d %s\n", idPeer, idVideo);
+		//printf("Comecar a assistir da cache: %d %s\n", idPeer, idVideo);
 
 		//Looking UP peers into keepers
 	}else{
@@ -281,22 +321,24 @@ int processRequestSimulator(unsigned int idPeer, THashTable* hashTable, TCommuni
 			// Estabelecer canal de dados
 			serverPeer->openULVideoChannel(serverPeer, idPeer, video, 0.f);
 			peer->openDLVideoChannel(peer, idServerPeer, video, 0.f);
-		} else
+		} else{
 			//printf("Comecar a assistir do CDN: %d %s\n", idPeer, idVideo);
 
-		//try to insert missed video
-		if ( peer->insertCache( peer, cloneObject(video), systemData ) ){
-			getIdObject(video, idVideo);
+			//try to insert missed video
+			cloneVideo=cloneObject(video);
+			if ( peer->insertCache( peer, cloneVideo , systemData, lPrincipal ) ){//@ apresenta erro apos retorno de cloneObject
+				getIdObject(video, idVideo);
 
-			item = createItemHashTable();
-			item->set(item, idPeer, peer, idVideo, video);
-			hashTable->insert(hashTable, item);
-			item->dispose(item);
+				item = createItemHashTable();
+				item->set(item, idPeer, peer, idVideo, video);
+				hashTable->insert(hashTable, item);
+				item->dispose(item);
 
-			// updating hash table due to evicting that made room for the cached video
-			listEvicted = peer->getEvictedCache(peer);
-			hashTable->removeEvictedItens(hashTable, idPeer, listEvicted);
+				// updating hash table due to evicting that made room for the cached video
+				listEvicted = peer->getEvictedCache(peer);
+				hashTable->removeEvictedItens(hashTable, idPeer, listEvicted);
 
+			}
 		}
 	}
 
@@ -390,6 +432,8 @@ void closeAllPeerOpenULVideoChannelsSimulator(TPeer *server, TCommunity *communi
 }
 
 
+
+
 void runSimulator(unsigned int SimTime, unsigned int warmupTime, unsigned int scale, TPriorityQueue* queue, TCommunity* community, THashTable* hashTable, TSystemInfo *sysInfo){
 	TEvent *event;
 	TTimeEvent timeEvent;
@@ -397,11 +441,12 @@ void runSimulator(unsigned int SimTime, unsigned int warmupTime, unsigned int sc
 	unsigned int idPeer;
 	TPeer *peer;
 
-	int videoLength;
+	float videoLength;
 	float hitRate=0, missRate=0, byteHitRate, byteMissRate, hitRateCom;
 	unsigned long int totalRequests=0;
-	unsigned long int clock = 0;
-	int peersUp;
+	//unsigned long int clock = 0;
+	float clock = 0.0;
+	int peersUp  = 0;
 	int k=1;
 	short int first_time = 1;
 	int bla = 0;
@@ -414,11 +459,16 @@ void runSimulator(unsigned int SimTime, unsigned int warmupTime, unsigned int sc
 	int finishCount = 0;
 	int topologyCount = 0;
 	int wtfCount = 0;
+
+
+
 		fprintf(stderr, "Sim time: %d\n", SimTime);
 
 	while ( clock < SimTime ){
 		event = queue->dequeue(queue);
 		eventCount++;
+
+		printf(" Clock: %f\n",clock);
 		if (!event){
 			fprintf(stderr,"ERROR: simulator.c: run out of events\n");
 			exit(0);
@@ -432,11 +482,14 @@ void runSimulator(unsigned int SimTime, unsigned int warmupTime, unsigned int sc
 
 		peer = community->getPeer(community, idPeer);
 
+
+
 		sysInfo->setTime(sysInfo, clock);
 
 		if (clock > bla*DAYS_TO_SECONDS){
 		blaTime = time(NULL);
-		fprintf(stderr, "%ld\tDay time: %d\tEvents: %d\tJoins: %d\tLeaves: %d\tWatches: %d\tFinishes: %d\tTopologies: %d\n", clock, blaTime - lastTime, eventCount, joinCount, leaveCount, watchCount, finishCount, topologyCount, wtfCount);
+		//fprintf(stderr, "%ld\tDay time: %d\tEvents: %d\tJoins: %d\tLeaves: %d\tWatches: %d\tFinishes: %d\tTopologies: %d\n", clock, blaTime - lastTime, eventCount, joinCount, leaveCount, watchCount, finishCount, topologyCount, wtfCount);
+		fprintf(stderr, "%f\n\tDay time: %d\tEvents: %d\tJoins: %d\tLeaves: %d\tWatches: %d\tFinishes: %d\tTopologies: %d\n", clock, blaTime - lastTime, eventCount, joinCount, leaveCount, watchCount, finishCount, topologyCount);
 		lastTime = blaTime;
 		eventCount = 0;
 		joinCount = 0;
@@ -458,7 +511,7 @@ void runSimulator(unsigned int SimTime, unsigned int warmupTime, unsigned int sc
 					community->collectStatistics(community, &hitRate, &missRate, &byteHitRate, &byteMissRate, &totalRequests, &peersUp, &hitRateCom);
 
 					printf("Stats: ");
-					printf("%lu ", clock-warmupTime);
+					printf("%f ", clock-(float)warmupTime);
 					printf("%f %f ", hitRate, missRate);
 					//printf("%f %f ", byteHitRate, byteMissRate);
 
@@ -491,6 +544,9 @@ void runSimulator(unsigned int SimTime, unsigned int warmupTime, unsigned int sc
 			// inform for community that peer is all alive
 			community->setAlivePeer(community, idPeer);
 
+			//@ Set time Join Peer
+			peer->setStartSession(peer, clock);
+
 			//Queuing a LEAVE event
 			timeEvent = clock + peer->getUpSessionDuration(peer);
 			event  = createEvent((TTimeEvent) timeEvent, LEAVE, (TOwnerEvent)idPeer);
@@ -510,6 +566,7 @@ void runSimulator(unsigned int SimTime, unsigned int warmupTime, unsigned int sc
 //			queue->enqueue(queue, timeEvent, event);
 
 		}else if(typeEvent == TOPOLOGY){
+
 			topologyCount++;
 			short status = peer->getStatus(peer);
 			processTopologySimulator(idPeer, hashTable, community, sysInfo);
@@ -528,7 +585,7 @@ void runSimulator(unsigned int SimTime, unsigned int warmupTime, unsigned int sc
 
 		}else if(typeEvent == SHOW_TOPOLOGY){
 
-			printf("Topology(Begin):%lu-----------------------------------------\n",clock);
+			printf("Topology(Begin):%f-----------------------------------------\n",clock);
 			TArrayDynamic *alives = community->getAlivePeer(community);
 			int xi;
 			for(xi=0;xi<community->getNumberOfAlivePeer(community);xi++){
@@ -537,7 +594,7 @@ void runSimulator(unsigned int SimTime, unsigned int warmupTime, unsigned int sc
 				topox->showEstablished(topox);
 			}
 
-			printf("Topology(End):%lu---------------------------------------------------\n",clock);
+			printf("Topology(End):%f---------------------------------------------------\n",clock);
 
 			timeEvent = clock + SimTime*0.05;
 			event  = createEvent((TTimeEvent) timeEvent, SHOW_TOPOLOGY, (TOwnerEvent)idPeer);
@@ -545,7 +602,7 @@ void runSimulator(unsigned int SimTime, unsigned int warmupTime, unsigned int sc
 
 		}else if(typeEvent == SHOW_MAPQUERY){
 
-			printf("Map Query(Begin):%lu-----------------------------------------\n",clock);
+			printf("Map Query(Begin):%f-----------------------------------------\n",clock);
 			TArrayDynamic *alives = community->getAlivePeer(community);
 			int xi;
 			for(xi=0;xi<community->getNumberOfAlivePeer(community);xi++){
@@ -553,7 +610,7 @@ void runSimulator(unsigned int SimTime, unsigned int warmupTime, unsigned int sc
 				p->showMapQuery(p);
 			}
 
-			printf("Map Query(End):%lu---------------------------------------------------\n",clock);
+			printf("Map Query(End):%f---------------------------------------------------\n",clock);
 
 			timeEvent = clock + SimTime*0.05;
 			event  = createEvent((TTimeEvent) timeEvent, SHOW_MAPQUERY, (TOwnerEvent)idPeer);
@@ -561,7 +618,7 @@ void runSimulator(unsigned int SimTime, unsigned int warmupTime, unsigned int sc
 
 
 		}else if(typeEvent == SHOW_CHANNELS){
-			printf("Channels(Begin):%lu-----------------------------------------\n",clock);
+			printf("Channels(Begin):%f-----------------------------------------\n",clock);
 			TArrayDynamic *alives = community->getAlivePeer(community);
 			int xi;
 			for(xi=0;xi<community->getNumberOfAlivePeer(community);xi++){
@@ -569,7 +626,7 @@ void runSimulator(unsigned int SimTime, unsigned int warmupTime, unsigned int sc
 				p->showChannelsInfo(p);
 			}
 
-			printf("Channels(End):%lu---------------------------------------------------\n",clock);
+			printf("Channels(End):%f---------------------------------------------------\n",clock);
 			timeEvent = clock + SimTime*0.05;
 			event  = createEvent((TTimeEvent) timeEvent, SHOW_CHANNELS, (TOwnerEvent)idPeer);
 			queue->enqueue(queue, timeEvent, event);
@@ -598,6 +655,9 @@ void runSimulator(unsigned int SimTime, unsigned int warmupTime, unsigned int sc
 			addDownTimeStatsPeer( peer->getOnStats(peer), (timeEvent>SimTime?(SimTime-clock):(timeEvent-clock)));
 
 		}else if( (typeEvent == REQUEST) && (peer->isUp(peer))){
+
+
+
 			//Processing Request event
 			watchCount++;
 			videoLength = processRequestSimulator(idPeer, hashTable, community, sysInfo);
@@ -616,15 +676,28 @@ void runSimulator(unsigned int SimTime, unsigned int warmupTime, unsigned int sc
 
 
 		}else if ( (typeEvent == STORE) ){
+
 			processStoreSimulator(hashTable,community,sysInfo);
 
 			//Queuing A Request event based on video length and the user thinking time
-			timeEvent = clock + 7*24*60*60;
+			timeEvent = clock + 6*24*60*60;
 			event  = createEvent((TTimeEvent) timeEvent, STORE, (TOwnerEvent)idPeer);
 			queue->enqueue(queue, timeEvent, event);
 
 
-		}else if ((typeEvent == REPLICATE) && (peer->isUp(peer)) ){
+		//}else if ((typeEvent == REPLICATE) && (peer->isUp(peer)) ){
+		}else if (typeEvent == REPLICATE ){
+
+
+			printf("Chamada Replicacao \n");
+			RandomReplicate(hashTable, community, sysInfo);
+
+			//Processing Replicate event
+			timeEvent = clock + (7*24*60*60);
+			event  = createEvent((TTimeEvent) timeEvent, REPLICATE, 0);
+			queue->enqueue(queue, timeEvent, event);
+
+
 
 			//Processing Replicate event
 			//processReplicateSimulator(idPeer, hashTable, community, systemData);
@@ -641,6 +714,8 @@ void runSimulator(unsigned int SimTime, unsigned int warmupTime, unsigned int sc
 	}
 }
 
+
+
 int main(int argc, char **argv){
 	TCommunity* community;
 	TPriorityQueue* queue;
@@ -653,10 +728,9 @@ int main(int argc, char **argv){
 	warmupTime = 8*HOURS_TO_SECONDS;
 	scale = HOURS_TO_SECONDS;
 
-	char *entry = (char*)"/home/thais/Documents/Redes/CdnP2P/src/scenario-proactive.xml";
+	char *entry = (char*)"/home/kratos/eclipse/workspace/cdnp2psim/src/scenario-proactive.xml";
 
 	initSimulator(simTime, &community, &queue, &hashTable, &systemData, entry);
-
 	runSimulator(simTime, warmupTime, scale, queue, community, hashTable, systemData);
 
 	//printStatCommunity(community);

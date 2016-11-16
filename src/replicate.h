@@ -4,9 +4,28 @@
  *  Created on: Sep 20, 2011
  *      Author: cesar
  */
-
 #ifndef REPLICATE_H_
 #define REPLICATE_H_
+
+//#include "symtable.h"
+//#include "hash.h"
+//#include "community.h"
+
+//#include "dictionary.h"
+//#include "peer.h"
+//#include "system.h"
+
+
+
+// Random Policy Replicate
+void *createReplicateRandom(char *pars);
+void RandomReplicate(hashTable,  community, systemData);
+
+
+// None Policy Replicate
+void *createReplicateNone(char *pars);
+//static void NoneReplicate(TPeer* peer, unsigned int idPeer, THashTable* hashTable, TCommunity* community, TSystemInfo* systemData);
+
 
 typedef struct replicate TReplicate;
 typedef void TDATAReplicate;

@@ -16,6 +16,10 @@
 #include "search.h"
 #include "peer.h"
 #include "symtable.h"
+#include "replicate.h"
+#include "channel.h"
+#include "community.h"
+
 
 #define fatal_error(str, pattern) fprintf(stderr,"%s %s\n", str, pattern),exit(0)
 
@@ -273,13 +277,70 @@ static void* initPrefetchSymTable(TDictionary *d){
 
 
 
+
+
+//
+static void* initReplicateSymTable(TDictionary *d){
+	TKeyDictionary key;
+	TDataCreateSymTable *sym;
+
+	sym = malloc(sizeof(TDataCreateSymTable));
+	key = d->keyGenesis("REPLICATE:NONE");
+	sym->create= (TCreateSymTable)createReplicateNone;
+	sprintf(sym->pars,";");
+	d->insert(d,key,sym);
+
+	sym = malloc(sizeof(TDataCreateSymTable));
+	key = d->keyGenesis("REPLICATE:RANDOM");
+	sym->create= (TCreateSymTable)createReplicateRandom;
+	sprintf(sym->pars,"bfraction;swindow");
+	d->insert(d,key,sym);
+
+	return d;
+}
+
+
+//@ Channel
+//Table of Symbols
+//Link Management Policy
+// Init Link Management Policy Type
+static void* initLMPolicySymTable(TDictionary *d){
+	TKeyDictionary key;
+	TDataCreateSymTable *sym;
+
+	sym = malloc(sizeof(TDataCreateSymTable));
+	key = d->keyGenesis("THROUGHPUT:FROMFILE");
+	sym->create = (TCreateSymTable)createFROMFILEPolicy;
+	sprintf(sym->pars,"limsup;source");
+	d->insert(d,key,sym);
+
+	return d;
+}
+
+//*
+static void* initChannelFluctuationSymTable(TDictionary *d){
+	TKeyDictionary key;
+	TDataCreateSymTable *sym;
+
+	sym = malloc(sizeof(TDataCreateSymTable));
+	key = d->keyGenesis("FLUCTUATION:FROMFILE");
+	sym->create = (TCreateSymTable)createFluctuationFROMFILEPolicy;
+	sprintf(sym->pars,"source;");
+	d->insert(d,key,sym);
+
+	return d;
+}
+
+
+//*
 //
 //Table of Symbols
 //Object management Policy
 // Init Object Management Policy Type
 static void* initOMPolicySymTable(TDictionary *d){
-	TDataCreateSymTable *sym;
 	TKeyDictionary key;
+	TDataCreateSymTable *sym;
+
 
 	sym = malloc(sizeof(TDataCreateSymTable));
 	key = d->keyGenesis("OMP:GDSA");
@@ -302,6 +363,20 @@ static void* initOMPolicySymTable(TDictionary *d){
 	sym = malloc(sizeof(TDataCreateSymTable));
 	key = d->keyGenesis("OMP:LRU");
 	sym->create=createLRUPolicy;
+	sprintf(sym->pars,";");
+	d->insert(d,key,sym);
+
+	//@ FIFO for Replicated
+	sym = malloc(sizeof(TDataCreateSymTable));
+	key = d->keyGenesis("OMP:FIFO");
+	sym->create=createFIFOPolicy;
+	sprintf(sym->pars,";");
+	d->insert(d,key,sym);
+
+	//@ LRU for Replicated
+	sym = malloc(sizeof(TDataCreateSymTable));
+	key = d->keyGenesis("OMP:LRUREP");
+	sym->create=createLRURepPolicy;
 	sprintf(sym->pars,";");
 	d->insert(d,key,sym);
 
@@ -383,6 +458,13 @@ static void* initTopologyManagerSymTable(TDictionary *d){
 	sprintf(sym->pars,";");
 	d->insert(d,key,sym);
 
+	//@ Topologia baseada no inicio de Sessão
+	sym = malloc(sizeof(TDataCreateSymTable));
+	key = d->keyGenesis("TOPOLOGY:SESSION");
+	sym->create = createSessionTopology;
+	sprintf(sym->pars,";");
+	d->insert(d,key,sym);
+
 	return d;
 }
 
@@ -407,6 +489,12 @@ static void* initProfilePeerSymTable(TDictionary *d){
 	sprintf(sym->pars,";");
 	d->insert(d,key,sym);
 
+	sym = malloc(sizeof(TDataCreateSymTable));
+	key = d->keyGenesis("PROFILE:SESSION");
+	sym->create = createStartSessionProfilePeer;
+	sprintf(sym->pars,";");
+	d->insert(d,key,sym);
+
 	return d;
 }
 
@@ -421,9 +509,12 @@ TSymTable *createSymTable(){
 	initTopologyManagerSymTable(dic);
 	initSessionLastingPolicySymTable(dic);
 	initSearchingSymTable(dic);
+	initReplicateSymTable(dic);
 	initOMPolicySymTable(dic);
 	initRandomicSymTable(dic);
 	initProfilePeerSymTable(dic);
+	initLMPolicySymTable(dic);
+	initChannelFluctuationSymTable(dic);
 
 	symTable->data = dic;
 

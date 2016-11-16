@@ -4,12 +4,14 @@
 #include "datasource.h"
 #include "randomic.h"
 #include "cache.h"
+#include "hierarchy.h"
 #include "object.h"
 #include "system.h"
 #include "topology.h"
 #include "dictionary.h"
 #include "peer.h"
 #include "channel.h"
+//#include "community.h"
 
 
 typedef struct profile TProfilePolicyPeer;
@@ -22,17 +24,24 @@ struct profile{
 };
 
 float runJaccardContentProfilePeer(TPeer *peer, void* vRemoteCache){
-	TCache *localCache = peer->getCache(peer);
-	TCache *remoteCache = vRemoteCache;
+	THCache *localHCache = peer->getHCache(peer);//@ tratar
+	THCache *remoteHCache = vRemoteCache;//@ tratar
+
+
 	int A = 0,B = 0,C = 0;
 	float CoeficienteJaccard = 0;
+
+	int levelPrincipal=localHCache->getLevelPrincipal(localHCache);
+	TCache *localCache=localHCache->getCache(localHCache,levelPrincipal);
+	TCache *remoteCache=remoteHCache->getCache(remoteHCache,levelPrincipal);
+
 	TObject *video=NULL;
 	TIteratorListObject *it = createIteratorListObject(remoteCache->getObjects(remoteCache));
 	it->reset(it);
 
 	video = it->current(it);
 	while(video != NULL){
-		if(localCache->has(localCache,video)){
+		if(localCache->has(localCache,video)){//@ tratar
 			A++;
 		}else{
 			B++;
@@ -40,7 +49,7 @@ float runJaccardContentProfilePeer(TPeer *peer, void* vRemoteCache){
 
 		it->next(it); video = it->current(it);
 	}
-	C =  abs(localCache->getNumberOfStoredObject(localCache) - A);
+	C =  abs(localCache->getNumberOfStoredObject(localCache) - A);//@ Pegar o total da hierarquia ou do nivel principal ?
 	CoeficienteJaccard = ((float) A / ((float)A+(float)B+(float)C));
 
 	it->ufree(it);
@@ -49,11 +58,11 @@ float runJaccardContentProfilePeer(TPeer *peer, void* vRemoteCache){
 }
 
 
+
 void * getJaccardContentProfilePeer(TPeer *peer){
 
-	return  peer->getCache(peer);
+	return  peer->getHCache(peer);
 }
-
 
 void *createJaccardContentProfilePeer(void *entry){
 	TProfilePolicyPeer *sf = malloc(sizeof(TProfilePolicyPeer));
@@ -65,18 +74,48 @@ void *createJaccardContentProfilePeer(void *entry){
 	return sf;
 }
 
+//@ Functions Session Topology
+float runStartSessionProfilePeer(TPeer *peer, void* vneighbor){
+	TPeer *neighbor=vneighbor;
+
+	//Retorna o absoluto da diferença entre os tempos de Inicio de Sessão
+	return abs(peer->getStartSession(peer)-neighbor->getStartSession(neighbor));
+
+}
+
+void * getStartSessionProfilePeer(TPeer *peer){
+
+	return  peer;
+}
+
+//createSessionContentProfilePeer
+void *createStartSessionProfilePeer(void *entry){
+	TProfilePolicyPeer *sf = malloc(sizeof(TProfilePolicyPeer));
+
+	sf->data = entry;
+	sf->get = getStartSessionProfilePeer;
+	sf->run = runStartSessionProfilePeer;
+
+	return sf;
+}
+
 float runAnderbergContentProfilePeer(TPeer *peer, void *vRemoteCache){
-	TCache *localCache = peer->getCache(peer);
-	TCache *remoteCache = vRemoteCache;
+	THCache *localHCache = peer->getHCache(peer); //@ tratar
+	THCache *remoteHCache = vRemoteCache;//@ tratar
 	int A = 0,B = 0,C = 0;
 	float coeficient = 0;
+
+	int levelPrincipal=localHCache->getLevelPrincipal(localHCache);
+	TCache *localCache=localHCache->getCache(localHCache,levelPrincipal);
+	TCache *remoteCache=remoteHCache->getCache(remoteHCache,levelPrincipal);
+
 	TObject *video=NULL;
 	TIteratorListObject *it = createIteratorListObject(remoteCache->getObjects(remoteCache));
 	it->reset(it);
 
 	video = it->current(it);
 	while(video != NULL){
-		if(localCache->has(localCache,video)){
+		if(localCache->has(localCache,video)){//@ tratar
 			A++;
 		}else{
 			B++;
@@ -84,7 +123,7 @@ float runAnderbergContentProfilePeer(TPeer *peer, void *vRemoteCache){
 
 		it->next(it); video = it->current(it);
 	}
-	C =  abs(localCache->getNumberOfStoredObject(localCache) - A);
+	C =  abs(localCache->getNumberOfStoredObject(localCache) - A);//@ tratar
 	coeficient = (float)A / (A + (2 * (B+C)));
 
 	it->ufree(it);
@@ -94,7 +133,7 @@ float runAnderbergContentProfilePeer(TPeer *peer, void *vRemoteCache){
 
 
 void * getAnderbergContentProfilePeer(TPeer *peer){
-	return  peer->getCache(peer);
+	return  peer->getHCache(peer);
 }
 
 void *createAnderbergContentProfilePeer(void *entry){
@@ -237,11 +276,13 @@ static TMapQuery *createMapQuery(unsigned int idPeer){
 typedef struct _data_peer TDataPeer;
 struct _data_peer{
 	unsigned int id;
+	unsigned long int startSession;
 	short tier;
     short status;
     TDictionary *Queries;
     //TClassPeer class;
-    TCache *cache;
+    //TCache *cache;
+    THCache *hc;
     TStatsPeer *stats;
     // Controls Dynamic join time
     void *dynamicJoin;
@@ -260,6 +301,7 @@ struct _data_peer{
 
     //Canal
     TChannel *channel;
+    TFluctuation *fluctuation;
 
     TObject *currentlyViewing;
 
@@ -270,20 +312,21 @@ struct _data_peer{
 
 
 
-
-TDataPeer *initDataPeer(unsigned int id, short tier, void *dynamicJoin, void *dynamicLeave, void *dynamicRequest, void *dataSource, void *replicate, void *cache, void *topology, void *channel){
+//@ modificado para hierarquia de cache
+TDataPeer *initDataPeer(unsigned int id, short tier, void *dynamicJoin, void *dynamicLeave, void *dynamicRequest, void *dataSource, void *replicate, void *hcache, void *topology, void *channel){
 	TDataPeer *data = malloc(sizeof(TDataPeer));
 
 	data->id = id;
 	data->status = DOWN_PEER;
 	data->tier = tier;
+	data->startSession = NULL; //@ startSession
 
 	data->dynamicJoin = dynamicJoin;
 	data->dynamicLeave = dynamicLeave;
 	data->dynamicRequest = dynamicRequest;
 
 	data->dataSource = dataSource;
-	data->cache = cache;
+	data->hc = hcache; //@ Iniciando com a hierarquia
 	data->stats = initStatsPeer();
 
 	data->replicate = replicate;
@@ -304,55 +347,65 @@ TDataPeer *initDataPeer(unsigned int id, short tier, void *dynamicJoin, void *dy
 	return data;
 }
 
-
-static void* getEvictedFromCachePeer(TPeer *peer){
+//@ modificado para hierarquia de cache
+static void* getEvictedFromCachePeer(TPeer *peer, int levels){
 	TDataPeer *data = peer->data;
 
-	// update cache
-	TCache *cache = data->cache;
+	THCache *hc = data->hc;//@ modificado para hierarquia de cache
+	levels=hc->getLevelPrincipal(hc); //@
 
-	return cache->getEvictedObjects(cache);
+	return hc->getEvictedObjects(hc, levels);
 }
 
-static short insertCachePeer(TPeer *peer, void *vObject, void *vSystemData){
+//@ modificado para hierarquia de cache
+static short insertCachePeer(TPeer *peer, void *vObject, void *vSystemData, int levels){
 	TObject *video = vObject;
 	TSystemInfo *systemData = vSystemData;
-	TDataPeer *data = peer->data;
-	TCache *cache = data->cache;
+	TDataPeer *datapeer = peer->data;
+	THCache *hc = datapeer->hc;
+	TCache *cache=hc->getCache(hc,levels);
+/*
+	int levelPrincipal;
+	levelPrincipal=hc->getLevelPrincipal(hc); //@
+*/
 
 	//Record a miss
+	//TStatsCache *statsCache = hc->getStats(hc,levels);
 	TStatsCache *statsCache = cache->getStats(cache);
+
 	statsCache->addMiss(statsCache, 1);
 	statsCache->addByteMiss(statsCache, getLengthObject(video) );
 
 	//try to insert missed video
-	return (cache->insert( cache, video, systemData ) );
+	return hc->insert( hc,levels, video, systemData ) ;
 
 
 }
 
+//@ modificado para hierarquia de cache
 static void updateCacheAsServerPeer(TPeer *serverPeer, void *vObject, void *vSystemData){
 	TObject *storedVideo, *video = vObject;
 	TSystemInfo *systemData = vSystemData;
 	TDataPeer *data = serverPeer->data;
 	TListObject *listObject;
-	TCache *cacheServerPeer;
+	THCache *hcacheServerPeer;
 
-	cacheServerPeer = data->cache;
+	hcacheServerPeer = data->hc;
+	int lPrincipal=hcacheServerPeer->getLevelPrincipal(hcacheServerPeer);
 
 	// get stored copy
-	listObject = cacheServerPeer->getObjects(cacheServerPeer);
+	listObject = hcacheServerPeer->getObjects(hcacheServerPeer,lPrincipal);
 	storedVideo = listObject->getObject(listObject, video);
 
 	//updating peer's stats
-	TStatsCache *statsCacheServer = cacheServerPeer->getStats(cacheServerPeer);
+	TStatsCache *statsCacheServer = hcacheServerPeer->getStats(hcacheServerPeer,lPrincipal);
 	statsCacheServer->addCommunityHit(statsCacheServer, 1);
 	statsCacheServer->addByteCommunityHit( statsCacheServer, getStoredObject(storedVideo) );
 
 	statsCacheServer->addByteMiss(statsCacheServer, getLengthObject(storedVideo) - getStoredObject(storedVideo) );
 
 	// update cache
-	cacheServerPeer->update(cacheServerPeer, video, systemData);
+	hcacheServerPeer->update(hcacheServerPeer,lPrincipal, video, systemData);
 
 }
 
@@ -362,16 +415,17 @@ static void updateCachePeer(TPeer *peer, void *vObject, void *vSystemData){
 	TDataPeer *data = peer->data;
 
 	// update cache
-	TCache *cache = data->cache;
+	THCache *hc = data->hc;
+	int lPrincipal=hc->getLevelPrincipal(hc);
 
-	cache->update(cache, video, systemData);
+	hc->update(hc,lPrincipal, video, systemData);
 
 	// record a hit
-	TStatsCache *statsCache = cache->getStats(cache);
+	TStatsCache *statsCache = hc->getStats(hc,lPrincipal);
 	statsCache->addHit( statsCache , 1);
 
 	// get stored copy
-	TListObject *listObject = cache->getObjects(cache);
+	TListObject *listObject = hc->getObjects(hc,lPrincipal);
 	storedVideo = listObject->getObject(listObject, video);
 	if (storedVideo == NULL)
 		printf("Nào achou o video\n");
@@ -388,6 +442,17 @@ static void setupJoiningPeer(TPeer *peer){
 	dataSource->reset(dataSource);
 
 }
+
+//@ Set Time Join Peer
+static void setStartSessionPeer(TPeer *peer,float clock){
+	TDataPeer *data = peer->data;
+
+	data->startSession=clock;
+
+}
+
+
+
 
 static void setTierPeer(TPeer *peer, short tier){
 	TDataPeer *data = peer->data;
@@ -417,6 +482,13 @@ static void setChannelPeer(TPeer *peer, void *channel){
 	TDataPeer *data = peer->data;
 
 	data->channel = channel;
+}
+
+//Fluctuation
+static void updateTimeForFluctuationChannelPeer(TPeer *peer){
+
+	TChannel *channel=peer->getChannel(peer);
+	channel->updateRates(channel);
 }
 
 //Canal
@@ -524,14 +596,21 @@ static unsigned int getDownSessionDurationPeer(TPeer* peer){
 	return sl->pick(sl, peer);
 }
 
-static void *getCachePeer(TPeer* peer){
+
+static void *getStartSessionPeer(TPeer* peer){
 	TDataPeer *data = peer->data;
-	return data->cache;
+	return data->startSession;
 }
 
-static void setCachePeer(TPeer* peer, void *cache){
+
+static void *getHCachePeer(TPeer* peer){//@
 	TDataPeer *data = peer->data;
-	data->cache = cache;
+	return data->hc;
+}
+
+static void setHCachePeer(TPeer* peer, void *hcache){ //@
+	TDataPeer *data = peer->data;
+	data->hc = hcache;
 }
 
 
@@ -698,15 +777,15 @@ static short hasDownlinkPeer(TPeer* peer, TObject *video,  float prefetchFractio
 
 static short hasCachedPeer(TPeer* peer, void *object){
 	TDataPeer *data = peer->data;
-	TCache *cache = data->cache;
+	THCache *hc = data->hc;
 
-	return cache->has(cache,object);
+	return hc->has(hc, object);
 	//return (data->status == DOWN_PEER);
 }
 
-static short canStreamPeer(TPeer* peer, void *object, unsigned int clientId, float prefetchFraction){
+static short canStreamPeer(TPeer* peer, void *object, unsigned int clientId, float prefetchFraction){ //@
 	TDataPeer *data = peer->data;
-	TCache *cache = data->cache;
+	//THCache *hcache = data->hcache;
 	TChannel *channel = data->channel;
 	TDictionary *videosSending = data->videosSending;
 	float bitRate;
@@ -858,11 +937,11 @@ static void showChannelsInfoPeer(TPeer* peer){
 	}
 }
 
-TPeer* createPeer(unsigned int id,  short tier, void *dynamicJoin, void *dynamicLeave, void *dynamicRequest, void *dataSource, void *replicate, void *cache, void *topo, void *channel){
+TPeer* createPeer(unsigned int id,  short tier, void *dynamicJoin, void *dynamicLeave, void *dynamicRequest, void *dataSource, void *replicate, void *hcache, void *topo, void *channel){
     TPeer *p = (TPeer*)malloc(sizeof(TPeer));
 
     //Canal
-    p->data = initDataPeer(id, tier, dynamicJoin, dynamicLeave, dynamicRequest, dataSource, replicate, cache, topo, channel);
+    p->data = initDataPeer(id, tier, dynamicJoin, dynamicLeave, dynamicRequest, dataSource, replicate, hcache, topo, channel);
 
     p->getOnStats = getOnStatsPeer;
     p->getId = getIdPeer;
@@ -874,7 +953,8 @@ TPeer* createPeer(unsigned int id,  short tier, void *dynamicJoin, void *dynamic
     p->getReplicateTime = getReplicateTimePeer;
     p->getUpSessionDuration = getUpSessionDurationPeer;
     p->getDownSessionDuration = getDownSessionDurationPeer;
-    p->getCache = getCachePeer;
+    p->getStartSession = getStartSessionPeer;
+    p->getHCache = getHCachePeer; //@ Hierarquia
     p->getReplicate = getReplicatePeer;
     p->getDataSource = getDataSourcePeer;
     p->getCurrentlyViewing = getCurrentlyViewingPeer;
@@ -882,12 +962,13 @@ TPeer* createPeer(unsigned int id,  short tier, void *dynamicJoin, void *dynamic
     p->setDynamicJoin = setDynamicJoinPeer;
     p->setDynamicLeave = setDynamicLeavePeer;
     p->setDynamicRequest = setDynamicRequestPeer;
-    p->setCache = setCachePeer;
+    p->setHCache = setHCachePeer;
     p->setDataSource = setDataSourcePeer;
     p->setCurrentlyViewing = setCurrentlyViewingPeer;
     p->isUp = isUpPeer;
     p->isDown = isDownPeer;
     p->setupJoining = setupJoiningPeer;
+    p->setStartSession = setStartSessionPeer;
     p->hasCached = hasCachedPeer;
     p->hasDownlink = hasDownlinkPeer;
 
@@ -911,6 +992,7 @@ TPeer* createPeer(unsigned int id,  short tier, void *dynamicJoin, void *dynamic
     //Canal
     p->getChannel = getChannelPeer;
     p->setChannel = setChannelPeer;
+    p->updateTimeForFluctuation = updateTimeForFluctuationChannelPeer;
     p->canStream = canStreamPeer;
 
     p->setTier = setTierPeer;

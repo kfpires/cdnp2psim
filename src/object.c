@@ -16,8 +16,10 @@ typedef struct _data_object TDataObject;
 
 struct _data_object {
 	TIdObject id; // (YOUTUBEID/char)
-	int length; // in seconds
-	int stored; //in seconds
+	float length; // in seconds or milliseconds
+	int lengthBytes;//in Bytes
+	float stored; //in seconds
+	int replicado; // marca conteudo replicado na cache
 	int gPopularity; // global Popularity
 	int lPopularity; // local Popularity used for LFU
 	float accessFrequency; //
@@ -45,7 +47,7 @@ void disposeCatalogObject(TObject** catalog, int size) {
 		free(catalog[i]);
 }
 
-TObject* initObject(TIdObject id, int length, int gPopularity, int lPopularity) {
+TObject* initObject(TIdObject id, float length,int lengthBytes, int gPopularity, int lPopularity) {
 
 	TDataObject *dataObj = malloc(sizeof(TDataObject));
 	TObject *object = (TObject *) malloc(sizeof(TObject));
@@ -56,7 +58,9 @@ TObject* initObject(TIdObject id, int length, int gPopularity, int lPopularity) 
 	}
 	strcpy(dataObj->id, id);
 	dataObj->length = length;
+	dataObj->lengthBytes = lengthBytes;
 	dataObj->stored = length;
+	dataObj->replicado = 0;
 	dataObj->gPopularity = gPopularity;
 	dataObj->lPopularity = lPopularity;
 	dataObj->rating = 0.0;
@@ -78,7 +82,9 @@ void copyObject(TObject *src, TObject *dest) {
 
 	strcpy(dataDest->id, dataSrc->id);
 	dataDest->length = dataSrc->length;
+	dataDest->lengthBytes = dataSrc->lengthBytes;
 	dataDest->stored = dataSrc->stored;
+	dataDest->replicado = dataSrc->replicado;
 	dataDest->gPopularity = dataSrc->gPopularity;
 	dataDest->lPopularity = dataSrc->lPopularity;
 	dataDest->accessFrequency = dataSrc->accessFrequency;
@@ -97,9 +103,9 @@ TObject* cloneObject(TObject *p) {
 	TDataObject *dataClone = malloc(sizeof(TDataObject));
 
 	if ((clone == NULL )|| (dataClone == NULL)){
-	printf("PANIC: object.c: cloneObject(): Run Out of Memory on clone Object\n" );
-	exit(0);
-}
+		printf("PANIC: object.c: cloneObject(): Run Out of Memory on clone Object\n" );
+		exit(0);
+	}
 
 	clone->data = dataClone;
 	copyObject(p, clone);
@@ -111,8 +117,10 @@ void showObject(TObject *p) {
 	TDataObject *data = p->data;
 
 	printf("%s ", data->id);
-	printf("%d ", data->length);
-	printf("%d ", data->stored);
+	printf("%f ", data->length);
+	printf("%d ", data->lengthBytes);
+	printf("%f ", data->stored);
+	printf("%d ", data->replicado);
 	printf("%d ", data->gPopularity);
 	printf("%d ", data->lPopularity);
 	printf("%f ", data->accessFrequency);
@@ -166,9 +174,14 @@ void setUploadObject(TObject * object, char* upload) {
 	strcpy(data->upload, upload);
 }
 
-int getLengthObject(TObject *object) {
+float getLengthObject(TObject *object) {
 	TDataObject *data = object->data;
 	return data->length;
+}
+
+int getLengthBytesObject(TObject *object) {
+	TDataObject *data = object->data;
+	return data->lengthBytes;
 }
 
 int getStoredObject(TObject *object) {
@@ -176,6 +189,10 @@ int getStoredObject(TObject *object) {
 	return data->stored;
 }
 
+int getReplicateObject(TObject *object) {
+	TDataObject *data = object->data;
+	return data->replicado;
+}
 int getGPopularityObject(TObject *object) {
 	TDataObject *data = object->data;
 	return data->gPopularity;
@@ -247,7 +264,7 @@ void setAccessFrequencyObject(TObject *object, float accessFrequency) {
 	data->accessFrequency = accessFrequency;
 }
 
-void setStoredObject(TObject *object, int stored) {
+void setStoredObject(TObject *object, float stored) {
 	TDataObject *data = object->data;
 	data->stored = stored;
 }
@@ -262,7 +279,7 @@ void addStoredObject(TObject *object, int quantum) {
 	data->stored += quantum;
 
 	if (data->stored > data->length) {
-		printf("Error: AddStoredObject:Stored > length: %d %d\n", data->stored,
+		printf("Error: AddStoredObject:Stored > length: %f %f\n", data->stored,
 				data->length);
 		data->stored = data->length;
 	}
@@ -289,8 +306,16 @@ short isEqualObject(TObject *first, TObject *second) {
 	return (strcmp(dataFirst->id, dataSecond->id) == 0);
 }
 
+short isReplicatedObject(TObject *object) {
+	TDataObject *data = object->data;
+	return data->replicado;
+}
 
+void setReplicateObject(TObject *video,short replicado){
 
+TDataObject *data = video->data;
+data->replicado=replicado;
+}
 //
 //
 // List Object related implementation
@@ -418,6 +443,57 @@ static void removeListObject(TListObject* listObject, void* disposable) {
 
 }
 
+
+/*static void removeRepListObject(TListObject* listObject) {
+	TElemListObject *walk,*aux,*ant;
+	TDataListObject *dataListObject = listObject->data;
+
+	if ((dataListObject->head==NULL) )return;
+
+	aux = dataListObject->head;
+
+	while ( (aux != NULL) ){
+		walk=aux;
+		while ( (walk != NULL ) && (!isReplicatedObject(walk->object) )){
+			//ant=walk;
+			walk = walk->next;
+		}
+		aux=walk;
+		if (walk != NULL ) { // is listObject empty?
+
+			//tratar remocao do unico elemento
+			if (dataListObject->head == dataListObject->tail)
+				dataListObject->head = dataListObject->tail = NULL;
+
+			//tratar remocao no comeco
+			else if (dataListObject->head == walk) {
+				dataListObject->head = walk->next;
+				walk->next->prev = NULL;
+				aux = dataListObject->head;
+
+				//tratar remocao no final
+			} else if (dataListObject->tail == walk) {
+				dataListObject->tail = walk->prev;
+				walk->prev->next = NULL;
+				aux=NULL;
+
+				//tratar remocao intermediaria
+			} else {
+				aux=walk->next;
+				walk->prev->next = walk->next;
+				walk->next->prev = walk->prev;
+				//aux=ant->next;
+			}
+
+			disposeObject(walk->object);
+			free(walk);
+			dataListObject->holding--;
+		}
+
+
+	}
+
+}*/
 
 static void removeSoftListObject(TListObject* listObject, void* disposable){
 	TElemListObject *walk;
@@ -575,6 +651,28 @@ static void showListObject(TListObject *listObject) {
 	}
 
 }
+
+
+/*
+ * static void removeRepListObject(TListObject *listObject) {
+	TElemListObject *walker;
+	TDataListObject *dataListObject = listObject->data;
+
+	walker = dataListObject->head;
+
+
+	while (walker != NULL ) {
+
+		//Funcao para remover objeto replicado
+		if(isReplicatedObject()==1){
+
+		}
+		walker = walker->next;
+
+	}
+
+}
+*/
 
 static short hasListObject(TListObject *listObject, void *object) {
 	TElemListObject *walk;
@@ -861,7 +959,7 @@ static void* getObjectListObject(TListObject *listObject, void* object) {
 			walk = walk->next;
 	}
 
-	return walk->object;
+	return (found?walk->object:NULL);
 }
 
 static short setNewHeadListObject(TListObject *listObject, void* object) {
@@ -945,6 +1043,7 @@ TListObject *createListObject() {
 	listObject->cleanup = cleanupListObject;
 	listObject->destroy = destroyListObject;
 	listObject->show = showListObject;
+	//listObject->removeRep = removeRepListObject;
 
 	listObject->hasInto = hasListObject;
 	listObject->isEmpty = isEmptyListObject;

@@ -1,8 +1,9 @@
 #include "object.h"
 #include "dictionary.h"
 
-//stats related definition
-//
+
+
+
 typedef unsigned int TUpTimeStatsPeer;
 typedef unsigned int TDownTimeStatsPeer;
 typedef unsigned int TRequestStatsPeer;
@@ -38,14 +39,17 @@ typedef unsigned int (* TGetRequestTimePeer)(TPeer* peer);
 typedef unsigned int (* TGetReplicateTimePeer)(TPeer* peer);
 typedef unsigned int (* TGetUpSessionDurationPeer)(TPeer* peer);
 typedef unsigned int (* TGetDownSessionDurationPeer)(TPeer* peer);
-typedef void *(* TGetCachePeer)(TPeer* peer);
+typedef unsigned int (* TGetStartSessionPeer)(TPeer* peer);
+
+
+typedef void *(* TGetHCachePeer)(TPeer* peer);
 typedef void *(* TGetReplicatePeer)(TPeer* peer);
 typedef void *(* TGetDataSourcePeer)(TPeer* peer);
 typedef void (* TSetStatusPeer)(TPeer *peer, short status);
 typedef void (* TSetDynamicJoinPeer)(TPeer *peer, void *dynamicJoin);
 typedef void (* TSetDynamicLeavePeer)(TPeer *peer, void *dynamicLeave);
 typedef void (* TSetDynamicRequestPeer)(TPeer *peer, void *dynamicRequest);
-typedef void (* TSetCachePeer)(TPeer* peer, void *cache);
+typedef void (* TSetHCachePeer)(TPeer* peer, void *hcache);
 typedef void (* TSetDataSourcePeer)(TPeer *peer, void *dataSource);
 typedef short (* TIsUpPeer)(TPeer* peer);
 typedef short (* TIsDownPeer)(TPeer* peer);
@@ -61,6 +65,9 @@ typedef TDictionary *(* TGetOpenDLVideosPeer)(TPeer * peer);
 typedef TObject *(* TGetVideoReceivingFromPeer)(TPeer * peer, int serverId);
 
 typedef void (* TSetupJoiningPeer)(TPeer *peer);
+typedef void (* TSetStartSessionPeer)(TPeer *peer, float clock);//@ Tipo SetStartSessionPeer
+
+
 typedef void *(* TGetTopologyManagerPeer)(TPeer *peer);
 typedef void (* TSetTopologyManagerPeer)(TPeer *peer, void* tm);
 typedef short (* TCanStreamPeer)(TPeer *peer, void *video, unsigned int clientId, float prefetchFraction);
@@ -68,6 +75,7 @@ typedef short (* TCanStreamPeer)(TPeer *peer, void *video, unsigned int clientId
 //Canal
 typedef void *(* TGetChannelPeer)(TPeer *peer);
 typedef void (* TSetChannelPeer)(TPeer *peer, void* tm);
+typedef void (* TUpdateTimeForFluctuationChannelPeer)(TPeer *peer);
 typedef void *(* TGetCurrentlyViewingPeer)(TPeer *peer);
 typedef void (* TSetCurrentlyViewingPeer)(TPeer *peer, void* video);
 
@@ -75,7 +83,7 @@ typedef short (* THasCachedPeer)(TPeer *peer, void* object);
 typedef void (* TSetTierPeer)(TPeer *peer, short tier);
 typedef short (*TGetTierPeer)(TPeer *peer);
 typedef void (*TUpdateCachePeer)(TPeer *peer, void *vObject, void *vSystemData);
-typedef short (*TInsertCachePeer)(TPeer *peer, void *vObject, void *vSystemData);
+typedef short (*TInsertCachePeer)(TPeer *peer, void *vObject, void *vSystemData, int levels);
 typedef void *(*TGetEvictedCachePeer)(TPeer *peer);
 
 typedef void *(*TGetProfilePeer)(TPeer *peer);
@@ -103,7 +111,8 @@ struct peer {
 		TGetReplicateTimePeer getReplicateTime;
 		TGetUpSessionDurationPeer getUpSessionDuration;
 		TGetDownSessionDurationPeer getDownSessionDuration;
-		TGetCachePeer getCache;
+		TGetStartSessionPeer getStartSession; //@
+		TGetHCachePeer getHCache;
 		TGetReplicatePeer getReplicate;
 		TGetDataSourcePeer getDataSource;
 		TGetTopologyManagerPeer getTopologyManager;
@@ -111,6 +120,8 @@ struct peer {
 		//Canal		
 		TGetChannelPeer getChannel;
 		TSetChannelPeer setChannel;
+		TUpdateTimeForFluctuationChannelPeer updateTimeForFluctuation;
+
 		TGetCurrentlyViewingPeer getCurrentlyViewing;
 		TSetCurrentlyViewingPeer setCurrentlyViewing;
 
@@ -120,9 +131,10 @@ struct peer {
 		TSetDynamicJoinPeer setDynamicJoin;
 		TSetDynamicLeavePeer setDynamicLeave;
 		TSetDynamicRequestPeer setDynamicRequest;
-		TSetCachePeer setCache;
+		TSetHCachePeer setHCache;//@ modificado para hierarquia
 		TSetDataSourcePeer setDataSource;
 		TSetupJoiningPeer setupJoining;
+		TSetStartSessionPeer setStartSession; //@ set Start Session
 		TIsUpPeer isUp;
 		TIsDownPeer isDown;
 		THasDownlinkPeer hasDownlink;
@@ -155,6 +167,8 @@ struct peer {
 
 void *createAnderbergContentProfilePeer(void *entry);
 void *createJaccardContentProfilePeer(void *entry);
+//@
+void *createStartSessionProfilePeer(void *entry);
 
 
 void *createRandomSessionLasting(void *entry);

@@ -31,6 +31,7 @@ struct topology{
 
 void *createRandomTopology();
 void *createProactiveTopology();
+void* createSessionTopology(void *entry);//@
 
 
 

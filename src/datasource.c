@@ -174,9 +174,10 @@ static TFromCollectionDataCatalog *initFromCollectionDataCatalog(char *filename,
 	char idVideo[400];
 	char xuploaded[26];
 	xuploaded[0] = '\0';
-	int views, min, sec, length;
+	int views, min, sec, ms, lengthBytes;//@_05/10
+	float length;
 	int stars;
-	float ratings;
+	//float ratings;
 
 	unsigned int i = 0;
 
@@ -192,16 +193,15 @@ static TFromCollectionDataCatalog *initFromCollectionDataCatalog(char *filename,
 
 	objects = newCatalogObject(size);
 
-	fscanf(fp, "%s %d %d %d %d %f %s", idVideo, &min, &sec, &views, &stars,
-			&ratings, xuploaded);
+	fscanf(fp, "%s %d %d %d %d %d %d %s", idVideo, &min, &sec, &ms, &views, &stars,	&lengthBytes, xuploaded);
 	//fscanf(fp, "%s %d %d %d %d %f", idVideo, &min, &sec, &views,  &stars, &ratings);
 	while (!feof(fp) && (i < size)) {
 
 		//fscanf(fp, "%s %d %d %d %d %f %s", idVideo, &min, &sec, &views,  &stars, &ratings, xuploaded);
 
-		length = (min * 60 + sec);
+		length = (min * 60*1000 + sec +((float)ms/1000));//Tamanho em tempo de milissegundos
 
-		objects[i] = initObject(idVideo, length, views, 0);
+		objects[i] = initObject(idVideo, length,lengthBytes, views, 0);
 		setStoredObject(objects[i], length);
 		setLPopularityObject(objects[i], 0);
 		setUploadObject(objects[i], xuploaded);
@@ -214,16 +214,15 @@ static TFromCollectionDataCatalog *initFromCollectionDataCatalog(char *filename,
 
 		i++;
 		//fscanf(fp, "%s %d %d %d %d %f", idVideo, &min, &sec, &views,  &stars, &ratings);
-		fscanf(fp, "%s %d %d %d %d %f %s", idVideo, &min, &sec, &views, &stars,
-				&ratings, xuploaded);
+		fscanf(fp, "%s %d %d %d %d %d %d %s", idVideo, &min, &sec, &ms, &views, &stars,
+				&lengthBytes, xuploaded);
 	}
 
 	if (size > i) {
 		fprintf(stderr,
 				"ERROR:datasource.c::loadCatalogFromFile: CATALOG SOURCE HAS LESS OBJECTS THAN REQUESTED\n");
 		fprintf(stderr,
-				"ERROR:datasource.c::loadCatalogFromFile: THE CATALOG SIZE IS %d\n",
-				i);
+				"ERROR:datasource.c::loadCatalogFromFile: THE CATALOG SIZE IS %d\n",i);
 		exit(0);
 	}
 
@@ -354,8 +353,8 @@ TSetList **initFromPlayListDataCatalog(char *playLists, unsigned int length,
 	TKeyDictionary key;
 	char idVideo[400];
 	char xuploaded[26];
-	int views, min, stars, sec, duration;
-	float ratings;
+	int views, min, stars, sec, ms, lengthBytes;
+	float ratings,duration;
 	char line[6000];
 	char *lineptr;
 
@@ -372,15 +371,17 @@ TSetList **initFromPlayListDataCatalog(char *playLists, unsigned int length,
 		exit(0);
 	}
 
-	fscanf(fp, "%s %d %d %d %d %f %s", idVideo, &min, &sec, &views, &stars,
-			&ratings, xuploaded);
+	fscanf(fp, "%s %d %d %d %d %d %d %s", idVideo, &min, &sec, &ms, &views, &stars,
+			&lengthBytes, xuploaded);
 	while (!feof(fp)) {
 
-		duration = (min * 60 + sec);
+		duration = (min * 60*1000 + sec + ((float)ms/1000));//@ to milliseconds
 
-		object = initObject(idVideo, duration, views, 0);
 
-		setRatingObject(object, ratings);
+		object = initObject(idVideo, duration,lengthBytes, views, 0);
+
+		//setRatingObject(object, ratings);
+		setRatingObject(object, lengthBytes);
 		setUploadObject(object, xuploaded);
 		setStoredObject(object, duration);
 
@@ -397,8 +398,8 @@ TSetList **initFromPlayListDataCatalog(char *playLists, unsigned int length,
 
 		i++;
 
-		fscanf(fp, "%s %d %d %d %d %f %s", idVideo, &min, &sec, &views, &stars,
-				&ratings, xuploaded);
+		fscanf(fp, "%s %d %d %d %d %d %d %s", idVideo, &min, &sec, &ms, &views, &stars,
+				&lengthBytes, xuploaded);
 
 	}
 
@@ -790,7 +791,7 @@ void* createFromCollectionDataSource(TDataCatalog *dataCatalog) {
 	dataSource->pickForPrefetch = pickForPrefetchDataSource;
 	dataSource->reset = resetFromCollectionDataSource;
 	dataSource->size = sizeFromCollectionDataSource;
-	dataSource->duration = durationFromCollectionDataSource;
+	dataSource->duration = durationFromCollectionDataSource;//@ Criar tamanho em Bytes da colecao ?
 	dataSource->firstkduration = firstkDurationFromCollectionDataSource;
 
 	return dataSource;

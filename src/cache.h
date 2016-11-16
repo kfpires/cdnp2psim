@@ -94,6 +94,9 @@ typedef short (* TIsCacheableCache)(TCache *cache, void *object, void *SystemDat
 typedef short (* THasCache)(TCache *cache, void *object);
 typedef short (* TDisposeCache)(TCache* cache);
 typedef void (* TShowCache)(TCache* cache);
+typedef void (* TRemoveRepCache)(TCache* cache);
+
+//static void removeRepCache(TCache *cache);
 
 typedef TAvailabilityCache (* TGetAvailabilityCache)(TCache* cache);
 typedef TSizeCache (* TGetSizeCache)(TCache* cache);
@@ -118,6 +121,7 @@ struct cache{
 	THasCache has;
 	TDisposeCache dispose;
 	TShowCache show;
+	//TRemoveRepCache removeRep;
 
 	//gets and sets
 	TGetAvailabilityCache getAvailability;
@@ -186,6 +190,8 @@ short updateGDSPPolicy(void* systemData, TCache* cache, void* object);
 // Replicate related OM procedure for GDSP
 void* firstKGDSPPolicy(TCache* cache, int K);
 
+//Replicate
+//short removeReplicate(TCache* cache);
 
 //GDSF
 typedef struct GDSFPolicy TGDSFPolicy;
@@ -225,6 +231,25 @@ short updateLRUPolicy(void* systemData, TCache* cache, void* object);
 short cacheableLRUPolicy(void* systemData, TCache* cache, void* object);
 
 void* firstKLRUPolicy(TCache* cache, int k);
+
+//@FIFO for Replicated
+//FIFO
+typedef struct FIFOPolicy TFIFOPolicy;
+void *createFIFOPolicy(void *entry);
+short replaceFIFOPolicy(void* systemData, TCache* cache, void* object);
+short updateFIFOPolicy(void* systemData, TCache* cache, void* object);
+short cacheableFIFOPolicy(void* systemData, TCache* cache, void* object);
+
+void* firstKFIFOPolicy(TCache* cache, int k);
+
+//@ LRU for Replicated
+typedef struct LRURepPolicy TLRURepPolicy;
+void *createLRURepPolicy(void *entry);
+short replaceLRURepPolicy(void* systemData, TCache* cache, void* object);
+short updateLRURepPolicy(void* systemData, TCache* cache, void* object);
+short cacheableLRURepPolicy(void* systemData, TCache* cache, void* object);
+
+void* firstKLRURepPolicy(TCache* cache, int k);
 
 //LFU
 typedef struct LFUPolicy TLFUPolicy;
@@ -270,4 +295,3 @@ short updateGDSAPolicy(void* systemData, TCache* cache, void* object);
 
 
 #endif /* CACHE_H_ */
-

@@ -19,6 +19,7 @@ static void* firstKCache(TCache* cache, int K);
 static short hasCache(TCache *cache, void *object);
 static short disposeCache(TCache *cache);
 static void showCache(TCache *cache);
+//static void removeRepCache(TCache *cache);
 
 static TAvailabilityCache getAvailabilityCache(TCache* cache);
 static TSizeCache getSizeCache(TCache* cache);
@@ -66,6 +67,7 @@ TCache *createCache(TSizeCache size, TOMPolicy *policy ){
 
 	//sets and gets
 	cache->show = showCache;
+	//cache->removeRep = removeRepCache;
 	cache->dispose = disposeCache;
 	cache->has = hasCache;
 	cache->getAvailability=getAvailabilityCache;
@@ -155,6 +157,15 @@ static void showCache(TCache *cache){
 
 	printf("\n");
 }
+
+/*static void removeRepCache(TCache *cache){
+	TDataCache *data = cache->data;
+	TListObject *listObject = data->objects;
+
+	listObject->removeRep(listObject);
+
+	printf("\n");
+}*/
 
 //Returns a status that points out whether or not
 //objects were disposed from passed cache
@@ -343,7 +354,7 @@ void* firstKGDSPPolicy(TCache* cache, int k){
 short replaceGDSPPolicy(void* vSysInfo, TCache* cache, void* object){
 	TSystemInfo *sysInfo = vSysInfo;
 	short status = 0;
-	int length;
+	float length;
 	TObject *clone, *disposed=NULL, *alreadyDisposed;
 	float cost = 1; // set a constant cost for the object
 	float cumulativeValue = 0;
@@ -463,7 +474,7 @@ short updateGDSPPolicy(void* vSysInfo, TCache* cache, void* object){
 	short status = 0;
 	TObject* stored;
 	int  cost;
-	int length;
+	float length;
 	float accessFrequency, cumulativeValue;
 	TTimeSystem lastAccess, currentTime, elapsedTime;
 	TTimeScaleOfInterestGDSPPolicy timeScale;
@@ -799,6 +810,7 @@ void *createLRUPolicy(void *entry){
 	return policy;
 }
 
+
 void* firstKLRUPolicy(TCache* cache, int k){
 	int i=0;
 	TListObject *firstK = createListObject();
@@ -826,7 +838,7 @@ void* firstKLRUPolicy(TCache* cache, int k){
 short replaceLRUPolicy(void* vSysInfo, TCache* cache, void* object){
 	TSystemInfo *sysInfo = vSysInfo;
 	short status = 0;
-	int length;
+	float length;
 	TObject *tail, *disposed;
 	TDataCache *data = cache->data;
 	TListObject *listObject = data->objects;
@@ -899,6 +911,290 @@ short cacheableLRUPolicy(void* systemData, TCache* cache, void* object){
 	return status;
 }
 
+//@ FIFO Policy
+
+typedef struct OMFIFOPolicy TOMFIFOPolicy;
+struct OMFIFOPolicy{
+	//
+	TOMReplaceGeneralPolicy Replace; // Object Management Policy Replacement(FIFO/Popularity)
+	TOMUpdateGeneralPolicy Update; // Object Management Policy Update cache(FIFO/Popularity)
+	TOMCacheableGeneralPolicy Cacheable; // Object Management Policy Eligibility
+
+	TOMFirstKGeneralPolicy FirstK; // OMP first K
+
+};
+
+typedef void TDATAFIFOPolicy;
+
+struct FIFOPolicy{
+	TOMFIFOPolicy *OM;
+	TDATAFIFOPolicy *data;
+};
+
+
+void *createFIFOPolicy(void *entry){
+
+	TFIFOPolicy *policy = (TFIFOPolicy *) malloc(sizeof( TFIFOPolicy ) );
+
+	policy->OM = (TOMFIFOPolicy *) malloc(sizeof( TOMFIFOPolicy ) );
+
+	policy->data = NULL;
+
+	// init dynamics
+	policy->OM->Replace = replaceFIFOPolicy; // Object Management Policy Replacement(FIFO/Popularity)
+	policy->OM->Update = updateFIFOPolicy; // Object Management Policy Update cache(FIFO/Popularity)
+	//policy->OM->FirstK = firstKFIFOPolicy;
+	policy->OM->Cacheable = cacheableFIFOPolicy;
+
+	return policy;
+}
+
+
+void* firstKFIFOPolicy(TCache* cache, int k){
+	int i=0;
+	TListObject *firstK = createListObject();
+	TObject *clone=NULL;
+	TObject *object; // = getMinimumCumulativeValueListObject(cache->objects);
+	TDataCache *data = cache->data;
+	TListObject *listObject = data->objects;
+
+	object = listObject->getNext(listObject, NULL);
+
+	while ((object != NULL) && (i < k)){
+
+		clone =  cloneObject(object);
+
+		firstK->insertTail(firstK, clone);
+
+		object = listObject->getNext(listObject, object );
+		i++;
+	}
+
+	return firstK;
+}
+
+//Returns a status that points out whether or not
+short replaceFIFOPolicy(void* vSysInfo, TCache* cache, void* object){
+	TSystemInfo *sysInfo = vSysInfo;
+	short status = 0;
+	float length;
+	TObject *head, *disposed;
+	TDataCache *data = cache->data;
+	TListObject *listObject = data->objects;
+
+	length = getLengthObject(object);
+
+	if( data->size > length ){
+		status = 1;
+		while(data->availability < length){
+			head = listObject->getHead(listObject);
+			data->availability += getLengthObject(head);
+			// updating list of disposed objects
+			// client could use it and has to clean up it
+			disposed = cloneObject(head);
+			data->disposed->insertHead(data->disposed, disposed);
+
+			listObject->removeHead(listObject);
+		}
+
+		//setLastAccessObject(object,sysInfo->getTime(sysInfo));
+
+		listObject->insertTail(listObject, object);
+
+		data->availability -= length;
+	}
+
+	//    printf("Call FIFO\n");
+
+	return status;
+}
+
+//Returns a status that points out whether or not
+short updateFIFOPolicy(void* xSysInfo, TCache* cache, void* object){
+
+	short status = 1;
+
+
+	return status;
+}
+
+short cacheableFIFOPolicy(void* systemData, TCache* cache, void* object){
+	short status = 0;
+	float length;
+	TDataCache *data = cache->data;
+	TListObject *listObject = data->objects;
+
+
+	length = getLengthObject(object);
+
+	if( data->size > length ){
+
+		status = 1;
+
+	}else{
+		status = 0;
+	}
+
+	return status;
+}
+
+//END FIFO Policy
+
+
+//@ LRU for Replicated
+// LRURep Policy
+typedef struct OMLRURepPolicy TOMLRURepPolicy;
+struct OMLRURepPolicy{
+	//
+	TOMReplaceGeneralPolicy Replace; // Object Management Policy Replacement(LRURepRep/Popularity)
+	TOMUpdateGeneralPolicy Update; // Object Management Policy Update cache(LRURep/Popularity)
+	TOMCacheableGeneralPolicy Cacheable; // Object Management Policy Eligibility
+
+	TOMFirstKGeneralPolicy FirstK; // OMP first K
+
+};
+
+typedef void TDATALRURepPolicy;
+
+struct LRURepPolicy{
+	TOMLRURepPolicy *OM;
+	TDATALRURepPolicy *data;
+};
+
+
+void *createLRURepPolicy(void *entry){
+
+	TLRURepPolicy *policy = (TLRURepPolicy *) malloc(sizeof( TLRURepPolicy ) );
+
+	policy->OM = (TOMLRURepPolicy *) malloc(sizeof( TOMLRURepPolicy ) );
+
+	policy->data = NULL;
+
+	// init dynamics
+	policy->OM->Replace = replaceLRURepPolicy; // Object Management Policy Replacement(LRURep/Popularity)
+	policy->OM->Update = updateLRURepPolicy; // Object Management Policy Update cache(LRURep/Popularity)
+	policy->OM->FirstK = firstKLRURepPolicy;
+	policy->OM->Cacheable = cacheableLRURepPolicy;//Retorna 1 em qq condicao !
+
+	return policy;
+}
+
+
+void* firstKLRURepPolicy(TCache* cache, int k){ //@ será utilizada ?
+	int i=0;
+	TListObject *firstK = createListObject();
+	TObject *clone=NULL;
+	TObject *object; // = getMinimumCumulativeValueListObject(cache->objects);
+	TDataCache *data = cache->data;
+	TListObject *listObject = data->objects;
+
+	object = listObject->getNext(listObject, NULL);
+
+	while ((object != NULL) && (i < k)){
+
+		clone =  cloneObject(object);
+
+		firstK->insertTail(firstK, clone);
+
+		object = listObject->getNext(listObject, object );
+		i++;
+	}
+
+	return firstK;
+}
+
+//Returns a status that points out whether or not
+short replaceLRURepPolicy(void* vSysInfo, TCache* cache, void* object){ //@ LRU Replicated atualizada para nao excluir calda replicada
+	TSystemInfo *sysInfo = vSysInfo;
+	short status = 0;
+	float length;
+	TObject *tail, *disposed,*replicated;
+	TDataCache *data = cache->data;
+	//TDataObject *isReplicated; //@ replicated object ?
+	TListObject *listObject = data->objects;
+
+	length = getLengthObject(object);
+
+	if( data->size > length ){
+		status = 1;
+		while(data->availability < length){
+			tail = listObject->getTail(listObject);
+
+			//@ Replace LRU Replicated
+
+
+			if (isReplicatedObject(tail) == 1){ //@ move objeto para topo, caso replicado
+
+				replicated = cloneObject(tail);
+				//data->disposed->insertHead(data->disposed, replicated);
+				listObject->removeTail(listObject);
+				listObject->insertHead(listObject, replicated);
+
+			}else{
+
+			data->availability += getLengthObject(tail);
+			// updating list of disposed objects
+			// client could use it and has to clean up it
+			disposed = cloneObject(tail);
+			data->disposed->insertHead(data->disposed, disposed);
+
+			listObject->removeTail(listObject);
+			}
+		}
+
+		setLastAccessObject(object,sysInfo->getTime(sysInfo));
+
+		listObject->insertHead(listObject, object);
+
+		data->availability -= length;
+	}
+
+	//    printf("Call LRURep\n");
+
+	return status;
+}
+
+//Returns a status that points out whether or not
+short updateLRURepPolicy(void* xSysInfo, TCache* cache, void* object){ //@ alterar?
+	TSystemInfo *sysInfo = xSysInfo;
+	short status = 0;
+	TDataCache *data = cache->data;
+	TListObject *listObject = data->objects;
+
+	if (listObject->setNewHead(listObject, object) ){
+
+		setLastAccessObject(object,sysInfo->getTime(sysInfo));
+
+	}else{
+		printf("PANIC:  Cache.c: LRURep Error on set new head on List Object\n");
+		exit(0);
+
+	}
+	status = 1;
+
+	//    printf("Call LRURep\n");
+
+	return status;
+}
+
+short cacheableLRURepPolicy(void* systemData, TCache* cache, void* object){//@ status recebe 1 em qq condicao
+	short status = 0;
+	TDataCache *data = cache->data;
+	TListObject *listObject = data->objects;
+
+	TObject *lastObject = listObject->getTail(listObject);
+
+	if (lastObject != NULL){
+		if ( getLastAccessObject(lastObject) < getLastAccessObject(object) ){
+			status = 1;
+		}
+	}else{
+		status = 1;
+	}
+
+	return status;
+}
+//@ End LRURep
 
 //Popularity
 typedef struct OMPOPULARITYPolicy TOMPOPULARITYPolicy;
@@ -977,7 +1273,8 @@ void* firstKPOPULARITYPolicy(TCache* cache, int k){
 
 short replacePOPULARITYPolicy(void* systemData, TCache* cache, void* object){
 	short status = 0;
-	int length, gPopularity;
+	int gPopularity;
+	float length;
 	TObject *tail, *disposed;
 	TDataCache *data = cache->data;
 	TListObject *listObject = data->objects;
@@ -1012,6 +1309,17 @@ short replacePOPULARITYPolicy(void* systemData, TCache* cache, void* object){
 	return status;
 }
 
+/*//remove objeto com campo replicado==1
+short removeReplicate(TCache* cache){
+
+	TDataCache *data = cache->data;
+	TListObject *listObject = data->objects;
+			listObject->removeRep(listObject);
+	return 1;
+
+
+
+}*/
 
 short updatePOPULARITYPolicy(void* systemData, TCache* cache, void* object){
 	short status = 1;
@@ -1101,7 +1409,7 @@ void* firstKLFUPolicy(TCache* cache, int k){
 //Returns a status that points out whether or not
 short replaceLFUPolicy(void* systemData, TCache* cache, void* object){
 	short status = 0;
-	int length;
+	float length;
 	TObject *lfu, *disposed;
 	TDataCache *data = cache->data;
 	TListObject *listObject = data->objects;
@@ -1246,7 +1554,8 @@ TListObject* firstKPARTIALPolicy(TCache* cache, int k){
 
 short replacePARTIALPolicy(void* systemData, TCache* cache, void* object){
 	short status = 0;
-	int length, segmentSize, segmentSizeDemand, lvoStoredLength;
+	int segmentSize, segmentSizeDemand, lvoStoredLength;
+	float length;
 	TObject *disposed, *lvo;
 	TDataCache *data = cache->data;
 	TListObject *listObject = data->objects;
@@ -1312,8 +1621,9 @@ short updatePARTIALPolicy(void* systemData, TCache* cache, void* object){
 	TObject *stored, *disposed;
 	TObject *mvObject; // must valuable object
 	TObject *lvObject; // must valuable object
-	int length, missed, segmentSize, hit, k, numSegments, segmentSizeDemand;
+	int missed, segmentSize, hit, k, numSegments, segmentSizeDemand;
 	int lvoStoredLength;
+	float length;
 	TDataCache *data = cache->data;
 	TListObject *listObject = data->objects;
 

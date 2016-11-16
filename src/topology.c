@@ -335,8 +335,9 @@ void* createRandomTopology(void *entry){
 	maxAttempts = atoi(p->next(p));
 	IdPeer = (unsigned int)atoi(p->next(p));
 
+
 	char pars[20];sprintf(pars,"10;");
-	data->onlinePeer = createUniformRandomic(pars);
+	data->onlinePeer = createTruncatedGeometricRandomic(pars);
 
 	sprintf(pars,"10;");
 	data->connected = createTruncatedGeometricRandomic(pars);
@@ -600,6 +601,321 @@ void* createProactiveTopology(void *entry){
 
 	return topo;
 }
+
+
+//@ Functions related to Session Topology
+//! Session topology management policy
+//
+
+typedef struct _data_session_topology TDataSessionTopology;
+struct _data_session_topology{
+	TRandomic *pickConnected;
+};
+
+void *findNeighborSimilarToMeSessionTopology(TPeer *peer, void *profile){
+	int i;
+
+	static TPriorityQueue *mostSimilar=NULL;
+	TTopology *topo = peer->getTopologyManager(peer);
+	TDataTopology  *data = topo->data;
+
+	TArrayDynamic *neighbors = data->neighbors;
+	int numNeighbors = neighbors->getOccupancy(neighbors);
+
+	 if (mostSimilar){
+		 mostSimilar->cleanup(mostSimilar);
+	 }else
+		 mostSimilar = createMaximumPriorityQueue(numNeighbors);
+
+	for(i=0;i<numNeighbors;i++){
+		TPeer *neighbbor = neighbors->getElement(neighbors,i);
+		//@ grau de similaridade sera o tempo de entrada mais curto entre os pares
+		int degreeSimilarity = (neighbbor->runProfilePolicy(neighbbor,profile));
+		mostSimilar->enqueue(mostSimilar,degreeSimilarity,neighbbor);
+	}
+
+	return mostSimilar;
+}
+
+int maintenanceFindNewNeighborSessionTopology(TTopology *topo, void *vCommunity){
+	TDataTopology  *data = topo->data;
+	TArrayDynamic *neighbors = data->neighbors;
+	int numNeighbors = neighbors->getOccupancy(neighbors);
+
+	if (numNeighbors==0)
+		return -1;
+
+	TConnManager *connManager = data->connManager;
+	TPeer *peer = connManager->getOwner(connManager);
+	unsigned int idPeer = peer->getId(peer);
+
+	TDataSessionTopology *data_policy = data->data_policy;
+	TRandomic *pickConnected = data_policy->pickConnected;
+
+	char entry[30];sprintf(entry,"%d;",numNeighbors);
+	pickConnected->reset(pickConnected, entry);
+	unsigned int i = pickConnected->pick(pickConnected)-1; // uniform [1, k]
+	TPeer *pickedNeighbbor = neighbors->getElement(neighbors,i);
+
+	void *profile = peer->getProfile(peer);
+	TPriorityQueue *pq = findNeighborSimilarToMeSessionTopology(pickedNeighbbor, profile);
+
+	while( !(pq->isEmpty(pq)) ){
+		TPeer *similarPeer = pq->dequeue(pq);
+		unsigned int idSimilar = similarPeer->getId(similarPeer);
+
+		if (idSimilar != idPeer ){
+			if( !connManager->hasEstablishedConnection(connManager, idSimilar ) ){
+				return idSimilar;
+			}
+		}
+	}
+
+	return -1;
+}
+
+int maintenanceEvaluateSortConnectedSessionTopology(TTopology *topo, TArrayDynamic *connected){
+	int i, occup;
+	TConnection *conn;
+	TDataTopology *data = topo->data;
+
+	TConnManager *cm = data->connManager;
+	unsigned int idOwner = cm->getIdOwner(cm);
+	float minIndexSatisfaction, indexSatisfaction;
+	int k = 0;
+	occup = connected->getOccupancy(connected);
+
+	conn = connected->getElement(connected, 0);
+	minIndexSatisfaction = conn->getIndexSatisfactionStats(conn, idOwner);
+
+	for(i=1;i<occup;i++){
+		conn = connected->getElement(connected, i);
+		indexSatisfaction = conn->getIndexSatisfactionStats(conn, idOwner);
+
+		if (indexSatisfaction < minIndexSatisfaction){
+			minIndexSatisfaction = indexSatisfaction;
+			k=i;
+		}
+	}
+
+	return k;
+
+}
+
+
+static void maintenanceEvaluateNeighborhoodSessionTopology(TTopology *topo){
+	int occupancy;
+	TArrayDynamic *connected;
+	TDataTopology  *data = topo->data;
+	TConnManager *connManager = data->connManager;
+	//TDataSessionTopology *data_session = data->data_policy;
+
+	if (connManager->isFullConnected(connManager)){
+		//TRandomic *pickConnected = data_session->pickConnected;
+
+		connected = connManager->getListEstablishedConnections(connManager);
+		occupancy = connected->getOccupancy(connected);
+
+		if (occupancy > 0){
+			int selected = maintenanceEvaluateSortConnectedSessionTopology(topo, connected);
+
+			TConnection *conn = connected->getElement(connected,selected);
+			if (conn->getIdClient(conn) != connManager->getIdOwner(connManager))
+				connManager->closeConnection(connManager,conn->getIdClient(conn));
+			else
+				connManager->closeConnection(connManager,conn->getIdServer(conn));
+
+		}
+	}
+}
+
+
+static void maintenanceSessionTopology(TTopology *topo, void *sysInfo, void *vCommunity){
+	int idPeer;
+	TDataTopology  *data = topo->data;
+	TConnManager *connManager = data->connManager;
+	TCommunity *community = vCommunity;
+
+	connManager->evaluateConnections(connManager, sysInfo);
+	if (data->cycle == 3){ // neighborhood evaluations
+		idPeer = maintenanceFindNewNeighborSessionTopology(topo, community);
+		if (idPeer>=0){
+			maintenanceEvaluateNeighborhoodSessionTopology(topo);
+
+			connManager->openConnection(connManager,(unsigned int)idPeer, community->getPeer(community, (unsigned int)idPeer));
+		}
+		data->cycle = 0;
+	}else{
+//		maintenanceEvaluateNeighborhoodSessionTopology(topo);
+		data->cycle++;
+	}
+
+}
+
+void bootstrapTrySessionTopology( TTopology *topo, void *vCommunity ){
+	int i;
+	TCommunity *community = vCommunity;
+	TDataTopology  *data = topo->data;
+	TConnManager *connManager = data->connManager;
+	TArrayDynamic *online = community->getAlivePeer(community);
+	int numOnline = community->getNumberOfAlivePeer(community);
+
+	unsigned int idOwner = connManager->getIdOwner(connManager);
+	TPeer *owner = connManager->getOwner(connManager);
+	void *profile = owner->getProfile(owner);
+
+	// Falta preencher *pq
+	 TPriorityQueue *pq = createMaximumPriorityQueue(numOnline);
+
+	 for(i=0;i<numOnline;i++){
+		 TPeer *onlinePeer = online->getElement(online,i);
+
+		 //Aqui criterio da topologia Session
+		 int degreeSimilarity = (onlinePeer->runProfilePolicy(onlinePeer,profile));//@
+		 pq->enqueue(pq,degreeSimilarity,onlinePeer);
+	 }
+
+	 while( !(pq->isEmpty(pq)) ){
+		 TPeer *similarPeer = pq->dequeue(pq);
+		 unsigned int idSimilar = similarPeer->getId(similarPeer);
+
+		 if (idSimilar != idOwner ){
+			 connManager->openConnection(connManager,idSimilar,similarPeer);
+		 }
+		 pq->dequeue(pq);
+	 }
+
+	 pq->ufree(pq);
+}
+
+
+
+void bootstrapSessionTopology(TTopology *topo, void *sysInfo, void *vCommunity){
+	TDataTopology  *data = topo->data;
+	TConnManager *connManager = data->connManager;
+	TCommunity *community = vCommunity;
+	unsigned int idOwner = connManager->getIdOwner(connManager);
+
+	// update owner
+	void *owner = community->getPeer(community,idOwner);
+	connManager->setOwner(connManager,owner);
+
+	if (!connManager->isConnected(connManager)){ // still waiting for a connection request!!!??
+		if (!connManager->hasPending(connManager)){
+			//tentativa de conexao com as politicas da topologia session
+			bootstrapTrySessionTopology(topo, community);
+		}else{
+			connManager->evaluateConnections(connManager, sysInfo);
+			if (connManager->isConnected(connManager))
+				data->status = MAINTENANCE;
+		}
+	}else{
+		connManager->evaluateConnections(connManager, sysInfo);
+		data->status = MAINTENANCE;
+	}
+}
+
+static void runSessionTopology(TTopology *topo, void* sysInfo, void *community){
+	TDataTopology  *data = topo->data;
+	short int status = data->status;
+	if(status == BOOTSTRAP){
+		bootstrapSessionTopology(topo, sysInfo, community);
+	}else if (status == MAINTENANCE){
+		maintenanceSessionTopology(topo, sysInfo, community);
+	}else if (status == STOPPED){
+		resumeTopology(topo, sysInfo);
+		bootstrapSessionTopology(topo, sysInfo, community);
+	}
+}
+
+
+void* createSessionTopology(void *entry){
+	TDataSessionTopology *data = malloc(sizeof(TDataSessionTopology));
+	int maxconnections, maxAttempts;
+	unsigned int IdPeer;
+
+	TParameters *p = createParameters(entry,PARAMETERS_SEPARATOR);
+	p->iterator(p);
+
+	maxconnections = atoi(p->next(p));
+	maxAttempts = atoi(p->next(p));
+	IdPeer = (unsigned int)atoi(p->next(p));
+
+	char pars[20];sprintf(pars,"10;");
+
+	// Como preencher tipo data ?
+	data->pickConnected = createUniformRandomic(pars);
+
+	//Create topology
+	TTopology *topo = createTopology(maxconnections, maxAttempts, IdPeer, data);
+
+	topo->run = runSessionTopology;
+
+	p->dispose(p);
+
+	return topo;
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 //#include "randomic.h"

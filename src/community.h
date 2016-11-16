@@ -8,6 +8,7 @@
 #ifndef COMMUNITY_H_
 #define COMMUNITY_H_
 
+
 typedef struct _data_community TDataCommunity;
 
 typedef struct community TCommunity;
@@ -28,6 +29,7 @@ typedef void* (* TGetAlivePeerCommunity)(TCommunity *community);
 typedef int (* TGetNumberOfAlivePeerCommunity)(TCommunity *community);
 typedef void (* TDisposeCommunity)(TCommunity* community);
 typedef void* (* TSearchingCommunity)(TCommunity* community, void *peer, void *object, unsigned int clientId, int prefetch);
+typedef int (* TFluctuationCommunity)(TCommunity* community, void *timeForFluctuation, void *hashTable);
 
 struct community{
 	void *data;
@@ -47,6 +49,7 @@ struct community{
 	TGetAlivePeerCommunity getAlivePeer;
 	TGetNumberOfAlivePeerCommunity getNumberOfAlivePeer;
 	TSearchingCommunity searching;
+	TFluctuationCommunity fluctuation;
 
 	TDisposeCommunity dispose;
 };
@@ -54,3 +57,9 @@ struct community{
 TCommunity* createCommunity(int simTime, char *scenarios);
 
 #endif /* COMMUNITY_H_ */
+
+
+
+
+
+

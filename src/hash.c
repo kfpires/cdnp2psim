@@ -1,4 +1,5 @@
-#include "cache.h"
+//#include "cache.h"
+#include "hierarchy.h"
 #include "peer.h"
 #include "object.h"
 #include "hash.h"
@@ -436,12 +437,13 @@ void disposeHashTable(THashTable* hashTable){
 
 static unsigned long int redundancyDemandHashTable(THashTable *hashTable){
 	int i;
-	int stored;
+	float stored;
+
 
 	unsigned long int demand=0;
 	TKeeperHashTable *keeper;
-	TCache *cache;
-	TListObject *listObjects, *listClones;
+	THCache *hc;
+	TListObject *listClones;
 	TObject *object, *clone, *walk, *tmp;
 	TDataHashTable *data = hashTable->data;
 
@@ -457,11 +459,19 @@ static unsigned long int redundancyDemandHashTable(THashTable *hashTable){
 			while (keeper!=NULL){
 				TPeer *peer = keeper->peer;
 				if (peer->isUp(peer)){
-					cache = peer->getCache(peer);
-					listObjects = cache->getObjects(cache);
-					object = listObjects->getObject(listObjects,keeper->object);
+					hc = peer->getHCache(peer);
+					//levels=hc->getLevels(hc);
+
+					//TCache *cache=hc->getCache(hc,i);
+					//listObjects = cache->getObjects(cache);
+					//object = listObjects->getObject(listObjects,keeper->object);
+					object = hc->search(hc,keeper->object);
 					clone = cloneObject(object);
 					listClones->insertOrd(listClones, clone, storedAsCriteriaObject);
+
+
+
+
 				}
 				keeper = keeper->next;
 			}
@@ -471,7 +481,7 @@ static unsigned long int redundancyDemandHashTable(THashTable *hashTable){
 				walk = listClones->getNext(listClones, object);
 
 				stored = getStoredObject(object);
-//				demand += stored;
+				//				demand += stored;
 
 				listClones->removeHead(listClones);
 

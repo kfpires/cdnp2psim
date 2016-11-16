@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 
 <!-- <community tiers="2" size="1000"> -->
-<community tiers="1" size="5">
+<community tiers="1" size="800">
 <!-- Grupo de pares que acessam playlists, removido -->
 <!--	<tier size="200">
 		<search>
@@ -78,84 +78,50 @@
 	-->
 	<!-- Fim do grupo de pares que acessam playlists -->
 	
-	<tier size="5">	
+	<tier size="800">	
 		<search>	
 			<policy>
 				<parameter name="dynamic">SEARCH:FLOADING</parameter>
-				<parameter name="maxLevels">1</parameter>
+				<parameter name="maxLevels">4</parameter>
 			</policy>	
 		</search>
-		
-		<fluctuation>
-			<policy>
-				<parameter name="dynamic">FLUCTUATION:FROMFILE</parameter>
-				<parameter name="source">/home/kratos/eclipse/workspace/cdnp2psim/Dados_Simulacao_ColecaoEntretenimento/fluctuation.txt</parameter>
-			</policy>	
-		</fluctuation>
-		
 		<peer>
-
-			<caches levels="2">
-				<cache>
-					<parameter name="size">6200</parameter>
-					<policy>
-						<parameter name="dynamic">OMP:LRU</parameter>
-					</policy>
-				</cache>
-				<cache>
-					<parameter name="size">7200</parameter>
-					<policy>
-						<parameter name="dynamic">OMP:FIFO</parameter>
-					</policy>
-				</cache>
-			
-			</caches>
-			
+			<cache>
+				<parameter name="size">7200</parameter>
+				<policy>
+					<parameter name="dynamic">OMP:GDSA</parameter>
+				</policy>
+			</cache>
 			<profile>
 				<parameter name="dynamic">PROFILE:JACCARD</parameter>
-				<!-- parameter name="alpha"></parameter -->
+				<parameter name="alpha">0.5</parameter>
 			</profile>
 			<topology>
 				<parameter name="maxConnections">30</parameter>
 				<parameter name="maxAttempts">10</parameter>
 				<manager>
-					<parameter name="dynamic">TOPOLOGY:RANDOM</parameter>
+					<parameter name="dynamic">TOPOLOGY:PROACTIVE</parameter>
 				</manager>
 			</topology>
 			<!-- Canal -->
 			<channel>	
 				<parameter name="capacity">768</parameter>
+				<parameter name="rateUplink">512</parameter>
 
-				<uplink>
-					<parameter name="rateUplink">512</parameter>
-					<throughput>
-						<parameter name="dynamic">THROUGHPUT:FROMFILE</parameter>
-						<parameter name="limsup">5</parameter>
-						<parameter name="source">/home/kratos/eclipse/workspace/cdnp2psim/Dados_Simulacao_ColecaoEntretenimento/uplink.txt</parameter>
-					</throughput>
-				</uplink>
-				<downlink>
-					<parameter name="rateDownlink">256</parameter>
-					<throughput>
-						<parameter name="dynamic">THROUGHPUT:FROMFILE</parameter>
-						<parameter name="limsup">5</parameter>
-						<parameter name="source">/home/kratos/eclipse/workspace/cdnp2psim/Dados_Simulacao_ColecaoEntretenimento/downlink.txt</parameter>
-					</throughput>
-				</downlink>
 			</channel>		
 			<churn>
 				<join>
 					<parameter name="dynamic">SESSIONLASTING:RANDOM</parameter>
 					<pick>
-						<parameter name="dynamic">RANDOM:CONSTANT</parameter>
-						<parameter name="value">6125</parameter>
+						<parameter name="dynamic">RANDOM:EXPONENTIALSINGLETON</parameter>
+						<parameter name="mean">900</parameter>
 					</pick>
 				</join>
 				<leave>
 				<parameter name="dynamic">SESSIONLASTING:RANDOM</parameter>
 					<pick>
-						<parameter name="dynamic">RANDOM:CONSTANT</parameter>
-						<parameter name="value">0</parameter>
+						<parameter name="dynamic">RANDOM:EXPONENTIALSINGLETON</parameter>
+						<parameter name="mean">86400</parameter>
 					</pick>	
 				</leave>
 			</churn>
@@ -169,11 +135,6 @@
 					<prefetch>
 						<parameter name="dynamic">PREFETCH:NONE</parameter>
 					</prefetch>
-					<replicate>
-						<parameter name="dynamic">REPLICATE:RANDOM</parameter>
-						<parameter name="bfraction">0.5</parameter>
-						<parameter name="swindow">512</parameter>
-					</replicate>
 					<access>
 						<parameter name="dynamic">RANDOM:FROMFILESINGLETON</parameter>
 						<parameter name="source">/home/kratos/eclipse/workspace/cdnp2psim/Dados_Simulacao_ColecaoEntretenimento/Padrao_Acesso_ColecaoYouTubeEntretenimento.out</parameter>

@@ -4,23 +4,38 @@
  *  Created on: Sep 18, 2011
  *      Author: cesar
  */
+
+#include "time.h"
 #include "stdio.h"
 #include "stdlib.h"
-#include "randomic.h"
-#include "cache.h"
-#include "system.h"
-#include "hash.h"
+#include "string.h"
 #include "peer.h"
+#include "event.h"
+#include "hash.h"
+#include "system.h"
 #include "object.h"
-
+#include "datasource.h"
+#include "randomic.h"
 #include "replicate.h"
+#include "cache.h"
+#include "hierarchy.h"
+#include "symtable.h"
+#include "internals.h"
+#include "topology.h"
+#include "community.h"
+#include "search.h"
+#include "channel.h"
+#include "dictionary.h"
 
-
+//typedef void* (* TPickForPrefetchDataSource)(TDataSource *);
 // Policy related data/function definition
 //
 struct replicate{
 	TPolicyReplicate policy;
 	TRandomic *cycle;
+	void *dynamic;
+	float bfraction;
+	int swindow;
 
     void *data;
 };
@@ -247,7 +262,7 @@ short policyReplicateTOPK(TReplicate* replicate, void* cache, void* systemData, 
 				idPeerNeighbor = listNeighbors[i];
 				i++;
 
-				replicateCache = peer->getCache(peer);
+				replicateCache = peer->getHCache(peer);
 
 				if (replicateCache->isCacheable(replicateCache, cloneObj, systemData)) {
 
@@ -289,3 +304,121 @@ short policyReplicateTOPK(TReplicate* replicate, void* cache, void* systemData, 
 	return (short) 1;
 }
 
+// Politicas de Replicacao 11/08/16
+
+//RANDOM POLICY REPLICATE
+
+//static void RandomReplicate(THashTable* hashTable, TCommunity* community, TSystemInfo* systemData){
+// retirado o static para efeito de teste, construir estruturas posteriormente
+void RandomReplicate(THashTable* hashTable, TCommunity* community, TSystemInfo* systemData){
+	TObject* video;
+	TIdObject idVideo;
+	TListObject *listEvicted;
+	//TPeer* serverPeer;
+	TPeer *peer;
+	THCache *hc;
+	TDataSource* dataSource;
+	TItemHashTable *item;
+	//unsigned int idServerPeer;
+	//TChannel* channel;
+	//	float prefetchRate;
+	int lReplicate; //Level Replicate
+
+	int sizeComm = community->getSize(community); //obtem tamanho da comunidade
+	unsigned int i;
+
+	printf("Replicacao---------------------------------------------------\n");
+
+	for(i=0;i<sizeComm;i++){
+
+		peer = community->getPeer(community, i);
+		hc=peer->getHCache(peer);
+		lReplicate=hc->getLevelReplicate(hc);
+		//channel = peer->getChannel(peer);
+		dataSource = peer->getDataSource(peer);
+		video = dataSource->pick(dataSource);
+		//prefetchRate = dataSource->getPrefetchRate(dataSource);//@ identificar
+
+		//Perguntar do par se o conteúdo a ser replicado eh menor que a janela deslizante
+
+		/*		if (video == NULL || !peer->hasDownlink(peer, video, prefetchRate))
+			return;*/
+
+		if (video == NULL )	return;
+
+		getIdObject(video, idVideo);
+		setReplicateObject(video,1);
+
+		if (peer->isUp(peer)){
+
+			if ( peer->insertCache( peer, cloneObject(video), systemData, lReplicate ) ){
+
+				item = createItemHashTable();
+				item->set(item, i, peer, idVideo, video);
+				hashTable->insert(hashTable, item);
+				item->dispose(item);
+
+				// updating hash table due to evicting that made room for the cached video
+				listEvicted = peer->getEvictedCache(peer);
+				hashTable->removeEvictedItens(hashTable, i, listEvicted);
+			}
+
+
+		}
+	}
+
+}
+
+
+
+
+// NONE POLICY REPLICATE
+static void NoneReplicate(TPeer* peer, unsigned int idPeer, THashTable* hashTable, TCommunity* community, TSystemInfo* systemData){
+
+		return;
+
+}
+
+
+
+void *createReplicateRandom(char *pars) {
+	TReplicate *replicate;
+	TParameters *lp = createParameters(pars, PARAMETERS_SEPARATOR);
+
+	lp->iterator(lp);
+
+	replicate = (TReplicate*) malloc(sizeof(TReplicate));
+
+	replicate->dynamic = RandomReplicate;
+	replicate->bfraction = atof(lp->next(lp));
+	replicate->swindow = atoi(lp->next(lp));
+	lp->dispose(lp);
+
+	return replicate;
+}
+void *createReplicateNone(char *pars) {
+	TReplicate *replicate;
+	TParameters *lp = createParameters(pars, PARAMETERS_SEPARATOR);
+
+	lp->iterator(lp);
+
+	replicate = (TReplicate*) malloc(sizeof(TReplicate));
+
+	replicate->dynamic = NoneReplicate;
+	//replicate->bfraction = atof(lp->next(lp));
+	//replicate->swindow = atoi(lp->next(lp));
+	lp->dispose(lp);
+
+	return replicate;
+}
+
+void *getDynamicReplicate(TReplicate *replicate) {
+	TReplicate *replica;
+
+
+
+	replica=replicate;
+
+
+	return replica;
+}
