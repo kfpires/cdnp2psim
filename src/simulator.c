@@ -225,7 +225,7 @@ void prefetch(TPeer* peer, unsigned int idPeer, THashTable* hashTable, TCommunit
 	TIdObject idVideo;
 	TListObject *listEvicted;
 	TPeer* serverPeer;
-	TDataSource* dataSource;
+	TDataSource *dataSource;
 	TItemHashTable *item;
 	unsigned int idServerPeer;
 	TChannel* channel;
@@ -269,15 +269,17 @@ void prefetch(TPeer* peer, unsigned int idPeer, THashTable* hashTable, TCommunit
 // Process Request from peers
 float processRequestSimulator(unsigned int idPeer, THashTable* hashTable, TCommunity* community, TSystemInfo* systemData){
 
-	TObject *video, *cloneVideo;
+	TObject *video, *cloneVideo, *video2;
 	TListObject *listEvicted;
 	TPeer *serverPeer;
+	TArrayDynamic *listPeers;
 	TDataSource *dataSource;
 	TItemHashTable *item;
 	unsigned int idServerPeer;
 	TIdObject idVideo;
 	float videoLength;
 	float zero = 0.f;
+	int occup;
 
 
 	TPeer *peer = community->getPeer(community, idPeer);
@@ -286,12 +288,26 @@ float processRequestSimulator(unsigned int idPeer, THashTable* hashTable, TCommu
 	int lPrincipal=hc->getLevelPrincipal(hc); //@
 
 	dataSource = peer->getDataSource(peer);
-	video = dataSource->pick(dataSource);
+	video = dataSource->pick(dataSource); // Retornando sequencialmente o padrão de acesso !
+	//Aqui entra escalonador
+	//Perguntar do player do par, qual o proximo segmento.
+
 
 	//set video that the peer is currently viewing
-	peer->setCurrentlyViewing(peer, video);
+	//peer->setCurrentlyViewing(peer, video);
 
-	serverPeer = community->searching(community,peer,video,idPeer, zero);
+	//Retornar lista de pares candidatos, verificar disponibilidade do objeto e capacidade do par em servir-lo.
+	//serverPeer = community->searching(community,peer,video,idPeer, zero);
+	listPeers = community->searching(community,peer,video,idPeer, zero);
+
+	occup=listPeers->getOccupancy(listPeers);
+	if(occup==0){
+
+		serverPeer=NULL;
+	}
+
+	//chamar o escalonador
+	//Identificar na lista de pares, o serverPeer para fornecer o conteudo requisitado.
 
 	videoLength = getLengthObject(video);
 
@@ -326,7 +342,7 @@ float processRequestSimulator(unsigned int idPeer, THashTable* hashTable, TCommu
 
 			//try to insert missed video
 			cloneVideo=cloneObject(video);
-			if ( peer->insertCache( peer, cloneVideo , systemData, lPrincipal ) ){//@ apresenta erro apos retorno de cloneObject
+			if ( peer->insertCache( peer, cloneVideo , systemData, lPrincipal ) ){
 				getIdObject(video, idVideo);
 
 				item = createItemHashTable();
@@ -682,6 +698,30 @@ void runSimulator(unsigned int SimTime, unsigned int warmupTime, unsigned int sc
 			//Queuing A Request event based on video length and the user thinking time
 			timeEvent = clock + 6*24*60*60;
 			event  = createEvent((TTimeEvent) timeEvent, STORE, (TOwnerEvent)idPeer);
+			queue->enqueue(queue, timeEvent, event);
+
+
+		//}else if ((typeEvent == REPLICATE) && (peer->isUp(peer)) ){
+		}else if ( (typeEvent == BUFFERING) ){
+
+			//processBuffering(hashTable,community,sysInfo);
+
+			//Inserir aqui o processo de Bufferizacao;
+
+			//Queuing A Request event based on video length and the user thinking time
+			timeEvent = clock + 2;
+			event  = createEvent((TTimeEvent) timeEvent, PLAYBACK, (TOwnerEvent)idPeer);
+			queue->enqueue(queue, timeEvent, event);
+
+
+		//}else if ((typeEvent == REPLICATE) && (peer->isUp(peer)) ){
+		}else if ( (typeEvent == PLAYBACK) ){
+
+			//processPlayback(hashTable,community,sysInfo);
+
+			//event based on playback chunk length
+			timeEvent = clock + 2;//@ ajustar o tempo de reproducao
+			event  = createEvent((TTimeEvent) timeEvent, PLAYBACK, (TOwnerEvent)idPeer);
 			queue->enqueue(queue, timeEvent, event);
 
 

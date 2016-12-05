@@ -81,7 +81,7 @@
 	<tier size="5">	
 		<search>	
 			<policy>
-				<parameter name="dynamic">SEARCH:FLOADING</parameter>
+				<parameter name="dynamic">SEARCH:NEIGHBORHOOD</parameter>
 				<parameter name="maxLevels">1</parameter>
 			</policy>	
 		</search>

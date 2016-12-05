@@ -113,7 +113,8 @@ typedef short (* TIsHCacheableHCache)(THCache *hc, void *object, void *SystemDat
 typedef short (* THasHCache)(THCache *hc, void *object);
 typedef short (* TDisposeHCache)(THCache* hc);
 typedef void (* TShowHCache)(THCache* hc);
-typedef void* (*TSearchHCache)(THCache* hc, void *vObject);
+typedef void* (*TSearchHCache)(THCache* hc, void *vObject, int levelInit, int levelEnd);
+
 //typedef static TObject* searchObjectHCache(THCache* hc, TObject *vObject);
 //ypedef void (* TRemoveRepHCache)(THCache* hcache);
 

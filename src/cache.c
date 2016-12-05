@@ -911,8 +911,9 @@ short cacheableLRUPolicy(void* systemData, TCache* cache, void* object){
 	return status;
 }
 
-//@ FIFO Policy
 
+
+//@ FIFO Policy
 typedef struct OMFIFOPolicy TOMFIFOPolicy;
 struct OMFIFOPolicy{
 	//

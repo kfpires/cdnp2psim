@@ -20,6 +20,7 @@ struct search{
 
 TSearch *createRandomWalkSearch(char *entry);
 TSearch *createFloadingSearch(char *entry);
+TSearch *createNeighborhoodSearch(char *entry);
 
 
 

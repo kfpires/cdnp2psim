@@ -531,6 +531,7 @@ static short hasIntoCommunity(TCommunity* community, void *vObject, void *vHashT
 	THCache *hc;  //@
 	TObject *storedObject;
 	unsigned int id = -1;
+	int levelInit=NULL,levelEnd=NULL;
 	//TListObject *listObject;
 	TDataCommunity *data = community->data;
 
@@ -545,9 +546,8 @@ static short hasIntoCommunity(TCommunity* community, void *vObject, void *vHashT
 			// lookup the Object into the peer's Cache
 
 			hc = peer->getHCache(peer);
-			storedObject = hc->search(hc,object);
-			//listObject = hcache->getObjects(hcache);
-			//storedObject = listObject->getObject(listObject, object);//@não esta listando todos os objetos, apenas niveis
+			storedObject = hc->search(hc,object,levelInit,levelEnd);
+
 
 			if (storedObject == NULL){
 				printf("PANIC: stored Object on hasCommunity!!");

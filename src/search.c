@@ -7,6 +7,7 @@
 #include "internals.h"
 #include "community.h"
 #include "peer.h"
+#include "hierarchy.h"
 #include "topology.h"
 #include "randomic.h"
 #include "search.h"
@@ -229,4 +230,155 @@ TSearch *createFloadingSearch(char *entry){
 
 	return search;
 }
+
+// Busca na vizinhança
+
+
+//
+typedef struct _data_neighborhood_search TDataNeighborhoodSearch;
+struct _data_neighborhood_search{
+	int maxlevel;
+};
+
+typedef struct item_neighborhood_search TItemNeighborhoodSearch;
+struct item_neighborhood_search{
+	int level;
+	int idRequester;
+	void *peer;
+};
+
+/*static TItemNeighborhoodSearch *createItemNeighborhoodSearch(int level, int idRequester, void* peer){
+	TItemNeighborhoodSearch *item = malloc(sizeof(TItemNeighborhoodSearch));
+
+	item->level  = level;
+	item->peer = peer;
+	item->idRequester = idRequester;
+
+	return item;
+}*/
+
+static void* runNeighborhoodSearch(TSearch *search, void* vPeer, void* object, unsigned int clientId, float prefetchFraction){
+	TPeer *peer = vPeer;
+	TDataSearch *data = search->data;
+	TDataNeighborhoodSearch *data_neighborhood = data->data_policy;
+	TArrayDynamic *listPeers = createArrayDynamic(1);
+	//TPriorityQueue *pq = createMaximumPriorityQueue(10);
+	//TPeer **listPeers;
+	THCache *hcache;
+
+	short found = 0;
+	int i, occup;
+	int levelInit, levelEnd;
+	//TItemNeighborhoodSearch *item;
+	unsigned int level=0, 	idPeer = peer->getId(peer), idSource = idPeer;
+	int idRequester = -1;
+
+	//visited->insert(visited, idPeer, peer);
+	//do{
+	TTopology *topo = peer->getTopologyManager(peer);
+
+	//if (!peer->canStream(peer,object,clientId, prefetchFraction)){
+	TArrayDynamic *neighbors = topo->getNeighbors(topo);
+	if (idRequester>=0){
+		topo->updateRequestsStats(topo,idRequester,1);
+		peer->updateRequestsMapQuery(peer,idSource, level);
+	}
+	idRequester = peer->getId(peer);
+	occup = neighbors->getOccupancy(neighbors);
+
+	//listPeers = malloc(1 * sizeof(TPeer*));//Cria vetor com lista de pares a retornar
+
+	for(i=0;i<occup;i++){  // BFS on neighborhood
+
+		peer = neighbors->getElement(neighbors,i);
+		idPeer = peer->getId(peer);
+		//if (peer->canStream(peer,object,clientId, prefetchFraction)){
+			//idPeer = peer->getId(peer);
+		/*	if (!visited->retrieval(visited, idPeer)){
+				visited->insert(visited, idPeer, peer);*/
+
+				hcache=peer->getHCache(peer);
+				levelInit=0;
+				levelEnd=hcache->getLevels(hcache);
+				if(hcache->search(hcache,object,levelInit, levelEnd)!=NULL){
+					listPeers->insert(listPeers,idPeer,peer);
+					found++;
+				}
+
+
+				//pq->enqueue(pq,level+1,createItemNeighborhoodSearch(level+1, idRequester, peer));
+			//}//end if !visited
+		//}
+	}
+	//}
+
+	/*
+			item =pq->dequeue(pq);
+			if (item){
+				level = item->level;
+				peer = item->peer;
+				idRequester = item->idRequester;
+				free(item);
+			}else{
+				deadend = 1;
+			}
+
+		}else{
+			found = 1;
+			if (idRequester>=0){
+				topo->updateHitsStats(topo,idRequester,1);
+				peer->updateHitsMapQuery(peer,idSource, level);
+			}
+		}*/
+
+	//}while( (!found) && (!deadend) && (level<=data_neighborhood->maxlevel) );
+
+	/*	item =pq->dequeue(pq);
+	while(item){
+		free(item);
+		item =pq->dequeue(pq);
+	}
+	pq->ufree(pq);*/
+
+	//visited->ufree(visited);
+	/*
+	if (!found)
+		peer = NULL;*/
+
+	return listPeers;
+}
+
+static void ufreeNeighborhoodSearch(TSearch *search){
+	TDataSearch *data = search->data;
+	TDataNeighborhoodSearch *data_neighborhood = data->data_policy;
+
+	free(data_neighborhood);
+	free(data);
+	free(search);
+}
+
+TSearch *createNeighborhoodSearch(char *entry){
+	TSearch *search = malloc(sizeof(TSearch));
+	TDataSearch *data = malloc(sizeof(TDataSearch));
+	TDataNeighborhoodSearch *data_neighborhood = malloc(sizeof(TDataNeighborhoodSearch));
+
+    TParameters *lp = createParameters(entry, PARAMETERS_SEPARATOR);
+
+    lp->iterator(lp);
+
+	data_neighborhood->maxlevel = atoi(lp->next(lp));
+
+	data->data_policy = data_neighborhood;
+
+	search->data = data;
+	search->run = runNeighborhoodSearch;
+	search->ufree = ufreeNeighborhoodSearch;
+
+	lp->dispose(lp);
+
+	return search;
+}
+
+
+
 

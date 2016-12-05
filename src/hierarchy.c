@@ -26,7 +26,8 @@ static short hasHCache(THCache *hc, void *object);
 static short disposeHCache(THCache *hc, int levels);
 static void showHCache(THCache *hc, int levels);
 //static void* searchObjectHCache(THCache* hc, void *vObject);
-static void* searchObjectHCache(THCache* hc, TObject *vObject);
+//static void* searchObjectHCache(THCache* hc, TObject *vObject);
+static void* searchObjectHCache(THCache* hc, TObject *vObject, int levelInit, int levelEnd);
 
 //static void removeRepHCache(THCache *hc, int levels, int levels);
 
@@ -35,7 +36,7 @@ static TSizeCache getSizeHCache(THCache* hc, int levels);
 //static void* getStatsHCache(THCache* hc, int levels);
 static void showStatsHCache(THCache* hc, int levels);
 static void* getDisposedObjectsHCache(THCache* hc, int levels);
-static void* getObjectsHCache(THCache* hc);
+static void* getObjectsHCache(THCache* hc, int level);
 static int getLevelsHCache(THCache* hc);
 static int getLevelPrincipalHCache(THCache* hc);
 static int getLevelReplicateHCache(THCache* hc);
@@ -114,7 +115,7 @@ THCache *createHCache(int levels){
 	hc->getSize=getSizeHCache;
 	//hc->getStats = getStatsHCache;
 	hc->getEvictedObjects=getDisposedObjectsHCache;
-	hc->getObjects=getObjectsHCache;//@modificar para trazer todos os objetos, independente de niveis
+	hc->getObjects=getObjectsHCache;
 	hc->getLevels=getLevelsHCache;
 	hc->getLevelPrincipal=getLevelPrincipalHCache;
 	hc->getLevelReplicate=getLevelReplicateHCache;
@@ -153,7 +154,8 @@ void putCacheInHCache(THCache *hc, int levels,TCache* cache){
 static short updateHCache(THCache *hc, int levels, void *object, void* systemData){
 	short status;
 	TDataHCache *data = hc->data;
-	TCache *cache=data->hcache[levels];
+	int lprincipal=hc->getLevelPrincipal(hc);
+	TCache *cache=data->hcache[lprincipal];
 
 	status = cache->update(cache, object,systemData);
 
@@ -173,24 +175,33 @@ static short isCacheableHCache(THCache *hc, int levels, void *object, void* syst
 }
 
 
-static void showHCache(THCache *hc, int levels ){
+static void showHCache(THCache *hc, int levels ){//Modificar para mostrar o conteudo por nivel
 	TDataHCache *data = hc->data;
-	TCache *cache=data->hcache[levels];
-	TListObject *listObject = cache->getObjects(cache);
+	TCache *cache;
+	TListObject *listObject;
+	int i,lprincipal=hc->getLevelPrincipal;
 
-	listObject->show(listObject);
+	if(levels!=-1){
+		cache=data->hcache[levels];
+		listObject = cache->getObjects(cache);
 
-	printf("\n");
+		listObject->show(listObject);
+
+		printf("\n");
+
+	}else{
+
+		for(i=0;i<lprincipal;i++){
+			printf("\n");
+			printf("Objects in level %d of the memory hierarchy	\n",i);
+			cache=data->hcache[i];
+			listObject = cache->getObjects(cache);
+			listObject->show(listObject);
+			printf("\n");
+		}
+	}
+
 }
-
-/*static void removeRepHCache(THCache *hc, int levels, int levels){
-	TDataHCache *data = hc->data;
-	TListObject *listObject = data->objects;
-
-	listObject->removeRep(listObject);
-
-	printf("\n");
-}*/
 
 //Returns a status that points out whether or not
 //objects were disposed from passed hc
@@ -275,25 +286,15 @@ static void* getDisposedObjectsHCache(THCache* hc, int levels){
 	return cache->getEvictedObjects(cache);
 }
 
-static void* getObjectsHCache(THCache* hc){ //@ Deve retornar todos os objetos da Hierarquia
+static void* getObjectsHCache(THCache* hc, int level){ //@ Tratar com urgencia 02_11_16,existe a necessidade do getObject?
 	TDataHCache *data = hc->data;
-	TCache *cache;
-	int i, levels=data->levels;
-	TListObject *objects,*aux[levels],*cabeca;
+	TCache *cache=data->hcache[level];
+	//int i;
+	//TListObject *objects;
 
-	objects=data->objects;
 
-	for(i=0;i<levels;i++){
-		cache=data->hcache[i];
 
-		aux[i]=cache->getObjects(cache);
-
-		cabeca=aux[i]->getHead(aux[i]);
-
-		objects->insertTail(objects,cabeca);
-	}
-
-	return objects;
+	return cache->getObjects(cache);
 }
 
 static int getLevelsHCache(THCache* hc){
@@ -321,21 +322,34 @@ static void* getCache(THCache *hc, int levels ){
 	return cache;
 }
 //
-static void* searchObjectHCache(THCache* hc, TObject *vObject){ //@ Deve retornar todos os objetos da Hierarquia
+static void* searchObjectHCache(THCache* hc, TObject *vObject, int levelInit, int levelEnd){ //@
 	TDataHCache *data = hc->data;
 	TCache *cache;
 	TObject *object = vObject;
-	int i=0, levels=data->levels;
+	int i;
 	TObject *storedObject=NULL;
 	TListObject *listObject;
+/*
+	if(levelInit==NULL || levelEnd==NULL){
+		levelInit=0;
+		levelEnd=(hc->getLevels(hc))-1;
+		i=levelInit;
+	}else{
 
-	while(i<levels && storedObject == NULL){
-		cache=data->hcache[i];
+	}*/
+	i=levelInit;
+	if (levelInit < 0 || levelInit >  levelEnd) {
+		printf("hierarchy.c:searchObjectHCache,Erro: Incorrect search range \n");
+		exit (0);
+	}else{
+		while(i<levelEnd && storedObject == NULL){
+			cache=data->hcache[i];
 
-		listObject = cache->getObjects(cache);
-		storedObject = listObject->getObject(listObject, object);//@não esta listando todos os objetos, apenas niveis
+			listObject = cache->getObjects(cache);
+			storedObject = listObject->getObject(listObject, object);//
 
-		i++;
+			i++;
+		}
 	}
 	return storedObject;
 }

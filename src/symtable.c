@@ -404,6 +404,12 @@ static void* initSearchingSymTable(TDictionary *d){
 	sprintf(sym->pars,"maxLevels;");
 	d->insert(d,key,sym);
 
+	sym = malloc(sizeof(TDataCreateSymTable));
+	key = d->keyGenesis("SEARCH:NEIGHBORHOOD");
+	sym->create = (TCreateSymTable)createNeighborhoodSearch;
+	sprintf(sym->pars,"maxLevels;");
+	d->insert(d,key,sym);
+
 	return d;
 }
 

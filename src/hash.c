@@ -437,6 +437,7 @@ void disposeHashTable(THashTable* hashTable){
 
 static unsigned long int redundancyDemandHashTable(THashTable *hashTable){
 	int i;
+	int levelInit=NULL,levelEnd=NULL;
 	float stored;
 
 
@@ -460,12 +461,8 @@ static unsigned long int redundancyDemandHashTable(THashTable *hashTable){
 				TPeer *peer = keeper->peer;
 				if (peer->isUp(peer)){
 					hc = peer->getHCache(peer);
-					//levels=hc->getLevels(hc);
 
-					//TCache *cache=hc->getCache(hc,i);
-					//listObjects = cache->getObjects(cache);
-					//object = listObjects->getObject(listObjects,keeper->object);
-					object = hc->search(hc,keeper->object);
+					object = hc->search(hc,keeper->object,levelInit,levelEnd);
 					clone = cloneObject(object);
 					listClones->insertOrd(listClones, clone, storedAsCriteriaObject);
 

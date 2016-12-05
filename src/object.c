@@ -20,7 +20,7 @@ struct _data_object {
 	int lengthBytes;//in Bytes
 	float stored; //in seconds
 	int replicado; // marca conteudo replicado na cache
-	int gPopularity; // global Popularity
+	float bitRate; // Overall bit Rate |mode:variable
 	int lPopularity; // local Popularity used for LFU
 	float accessFrequency; //
 	float rating;
@@ -29,7 +29,7 @@ struct _data_object {
 	float normalizedByteServed;
 	char upload[26]; // upload data
 
-	float bitRate;
+	//float bitRate;
 };
 
 //Object related implementations
@@ -47,7 +47,7 @@ void disposeCatalogObject(TObject** catalog, int size) {
 		free(catalog[i]);
 }
 
-TObject* initObject(TIdObject id, float length,int lengthBytes, int gPopularity, int lPopularity) {
+TObject* initObject(TIdObject id, float length,int lengthBytes, int bitRate, int lPopularity) {
 
 	TDataObject *dataObj = malloc(sizeof(TDataObject));
 	TObject *object = (TObject *) malloc(sizeof(TObject));
@@ -57,11 +57,11 @@ TObject* initObject(TIdObject id, float length,int lengthBytes, int gPopularity,
 		exit(0);
 	}
 	strcpy(dataObj->id, id);
-	dataObj->length = length;
+	dataObj->length = length; //duration
 	dataObj->lengthBytes = lengthBytes;
 	dataObj->stored = length;
 	dataObj->replicado = 0;
-	dataObj->gPopularity = gPopularity;
+	dataObj->bitRate = bitRate; //Overall bit rate |mode: variable
 	dataObj->lPopularity = lPopularity;
 	dataObj->rating = 0.0;
 	dataObj->cumulativeValue = 0.0;
@@ -69,7 +69,7 @@ TObject* initObject(TIdObject id, float length,int lengthBytes, int gPopularity,
 	dataObj->accessFrequency = 0;
 	dataObj->cumulativeValue = 0;
 	dataObj->normalizedByteServed = 0;
-	dataObj->bitRate = 0;
+	//dataObj->bitRate = gPopularity; //Overall bit rate |mode: variable
 
 	object->data = dataObj;
 
@@ -85,7 +85,7 @@ void copyObject(TObject *src, TObject *dest) {
 	dataDest->lengthBytes = dataSrc->lengthBytes;
 	dataDest->stored = dataSrc->stored;
 	dataDest->replicado = dataSrc->replicado;
-	dataDest->gPopularity = dataSrc->gPopularity;
+	dataDest->bitRate = dataSrc->bitRate;
 	dataDest->lPopularity = dataSrc->lPopularity;
 	dataDest->accessFrequency = dataSrc->accessFrequency;
 	dataDest->lastAccess = dataSrc->lastAccess;
@@ -121,7 +121,7 @@ void showObject(TObject *p) {
 	printf("%d ", data->lengthBytes);
 	printf("%f ", data->stored);
 	printf("%d ", data->replicado);
-	printf("%d ", data->gPopularity);
+	printf("%d ", data->bitRate);
 	printf("%d ", data->lPopularity);
 	printf("%f ", data->accessFrequency);
 	printf("%lu ", data->lastAccess);
@@ -195,7 +195,7 @@ int getReplicateObject(TObject *object) {
 }
 int getGPopularityObject(TObject *object) {
 	TDataObject *data = object->data;
-	return data->gPopularity;
+	return data->bitRate;
 }
 
 int getLPopularityObject(TObject *object) {
@@ -297,7 +297,7 @@ void addNormalizedByteServedObject(TObject *object, int quantum) {
 
 short isPopularObject(TObject *object) {
 	TDataObject *data = object->data;
-	return (data->gPopularity > 0);
+	return (data->bitRate > 0);
 }
 
 short isEqualObject(TObject *first, TObject *second) {
@@ -967,7 +967,7 @@ static short setNewHeadListObject(TListObject *listObject, void* object) {
 	short found = 0;
 	TDataListObject *dataListObject = listObject->data;
 
-	walk = dataListObject->head;
+	walk = dataListObject->head;//verificar tipo
 
 	while ( (walk != NULL) && (!found) ) {
 		if ( isEqualObject(walk->object, object) )

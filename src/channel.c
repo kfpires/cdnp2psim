@@ -143,11 +143,38 @@ static TLink *getDownLinkChannel(TChannel *channel){
 
 static void updateRatesLinks(TChannel *channel){
 
+	TDataChannel *data = channel->data;
+
 	TLink *upLink = channel->getUpLink(channel);
 	TLink *downLink = channel->getDownLink(channel);
 
+	float lastRate, nextRate,newRate;
+
+	//Update upLink
+	lastRate = upLink->getCurrentRate(upLink) ;
 	upLink->update(upLink);
+	nextRate = upLink->getCurrentRate(upLink) ;
+
+	if(nextRate > lastRate){
+		newRate = nextRate - lastRate;
+		data->rate_uplink +=newRate;
+	}else{
+		newRate = lastRate - nextRate;
+		data->rate_uplink +=newRate;
+	}
+
+	//update downLink
+	lastRate = downLink->getCurrentRate(downLink) ;
 	downLink->update(downLink);
+	nextRate = downLink->getCurrentRate(downLink) ;
+
+	if(nextRate > lastRate){
+		newRate = nextRate - lastRate;
+		data->rate_downlink +=newRate;
+	}else{
+		newRate = lastRate - nextRate;
+		data->rate_downlink +=newRate;
+	}
 
 }
 
@@ -188,7 +215,7 @@ static short openULDataChannel(TChannel *channel, int idPeerSrc, int idPeerDst, 
 	float currentRate = upLink->getCurrentRate(upLink);
 	short opened = 0; // status of requested data channel
 
-	if(data->rate_uplink <= currentRate){
+	//if(data->rate_uplink <= currentRate){
 
 		//data->rate_uplink = data->rate_uplink + (currentRate - data->rate_uplink);
 
@@ -202,11 +229,7 @@ static short openULDataChannel(TChannel *channel, int idPeerSrc, int idPeerDst, 
 			printf("eb: %f, rate_uplink: %f\n", eb, data->rate_uplink);
 			fflush(stdout);
 		}
-	}else{
-
-		data->rate_uplink += 0;
-
-	}
+	//}
 
 	return opened;
 }
@@ -220,7 +243,7 @@ static short openDLDataChannel(TChannel *channel, int idPeerSrc, int idPeerDst, 
 	short opened=0; // status of requested data channel
 
 
-	if(data->rate_downlink <= currentRate){
+	//if(data->rate_downlink <= currentRate){
 
 		if( (data->rate_downlink>= eb) ){
 			TOngoingDataChannel *ongoingDC = createOngoingDataChannel(eb, idPeerSrc, idPeerDst);
@@ -233,7 +256,7 @@ static short openDLDataChannel(TChannel *channel, int idPeerSrc, int idPeerDst, 
 			fflush(stdout);
 		}
 
-	}
+	//}
 
 
 	return opened;
@@ -347,8 +370,23 @@ static short updateLink(TLink *link){
 	short status;
 	TDataLink *data = link->data;
 	TGeneralLinkPolicy *policy = data->throughputPolicy;
+	//float lastRate, nextRate,newRate;
 
-	status = policy->LM->Update(link);
+	//lastRate = data->currentRate;
+
+	status = policy->LM->Update(link);//update Current Rate (  Fluctuation )
+/*
+	nextRate = data->currentRate;
+
+	if(nextRate > lastRate){
+
+		newRate = nextRate - lastRate;
+
+	}else{
+
+		newRate = lastRate - nextRate;
+	}*/
+
 
 	return status;
 }
@@ -420,7 +458,7 @@ void *createFROMFILEPolicy(void *entry){
 short updateFROMFILEPolicy(TLink *link){
 
 	short status = 0;
-	float lastRate;
+	float lastRate, nextRate;
 	TDataLink *data = link->data;
 	TFROMFILEPolicy *policy = data->throughputPolicy;
 
